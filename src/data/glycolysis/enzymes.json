@@ -1,7 +1,15 @@
 {
   "enzymeSlots": [
     { "id": "HK_step", "name": "Glucose phosphorylation", "reactionId": "hk_reaction" },
-    { "id": "PGI_step", "name": "Glucose-6-P isomerization", "reactionId": "pgi_reaction" }
+    { "id": "PGI_step", "name": "Glucose-6-P isomerization", "reactionId": "pgi_reaction" },
+    { "id": "PFK1_step", "name": "Fructose-6-P phosphorylation", "reactionId": "pfk1_reaction" },
+    { "id": "ALD_step", "name": "Fructose-1,6-BP cleavage", "reactionId": "aldolase_reaction" },
+    { "id": "TPI_step", "name": "Triose phosphate isomerization", "reactionId": "tpi_reaction" },
+    { "id": "GAPDH_step", "name": "G3P oxidative phosphorylation", "reactionId": "gapdh_reaction" },
+    { "id": "PGK_step", "name": "1,3-BPG phosphoryl transfer", "reactionId": "pgk_reaction" },
+    { "id": "PGM_step", "name": "3-PG to 2-PG isomerization", "reactionId": "pgm_reaction" },
+    { "id": "ENO_step", "name": "2-PG dehydration", "reactionId": "enolase_reaction" },
+    { "id": "PK_step", "name": "PEP phosphoryl transfer", "reactionId": "pk_reaction" }
   ],
   "isoforms": [
     {
@@ -14,21 +22,14 @@
       "structure": {
         "pdbId": "1HKC",
         "annotations": [
-          {
-            "label": "Catalytic cleft",
-            "residueRange": [1, 20],
-            "kind": "active_site",
-            "note": "Placeholder range — verify against structure before publishing."
-          }
+          { "label": "Catalytic cleft", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
         ]
       },
       "rateLaw": {
         "type": "irreversible_mm",
         "vMax": 1.0,
         "km": { "glucose": 0.05, "atp": 0.4 },
-        "effectors": [
-          { "metaboliteId": "g6p", "mode": "inhibitor", "kA_or_kI": 0.02 }
-        ]
+        "effectors": [{ "metaboliteId": "g6p", "mode": "inhibitor", "kA_or_kI": 0.02 }]
       },
       "regulationNotes": "Product-inhibited by G6P; low Km keeps it saturated even at fasting blood glucose.",
       "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.1, human HK1" }]
@@ -43,12 +44,7 @@
       "structure": {
         "pdbId": "1V4S",
         "annotations": [
-          {
-            "label": "Catalytic cleft",
-            "residueRange": [1, 20],
-            "kind": "active_site",
-            "note": "Placeholder range — verify against structure before publishing."
-          }
+          { "label": "Catalytic cleft", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
         ]
       },
       "rateLaw": {
@@ -59,6 +55,190 @@
       },
       "regulationNotes": "High Km and sigmoidal response let liver glucose uptake scale with blood glucose rather than saturating; not product-inhibited by G6P. Sequestered by GKRP in the fasted state (not yet modeled).",
       "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.2, human GCK" }]
+    },
+    {
+      "id": "GPI_muscle",
+      "enzymeSlot": "PGI_step",
+      "tissueContext": "muscle",
+      "geneName": "GPI",
+      "displayName": "Glucose-6-phosphate isomerase",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "1IAT", "annotations": [
+        { "label": "Active site loop", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 3.0,
+        "km": { "g6p": 0.4 },
+        "kmProducts": { "f6p": 0.15 },
+        "keq": 0.36
+      },
+      "regulationNotes": "Near-equilibrium; not a major control point in muscle.",
+      "citations": [{ "source": "BRENDA", "note": "EC 5.3.1.9, human GPI" }]
+    },
+    {
+      "id": "PFKM_muscle",
+      "enzymeSlot": "PFK1_step",
+      "tissueContext": "muscle",
+      "geneName": "PFKM",
+      "displayName": "Phosphofructokinase-1, muscle isoform",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "2PFK", "annotations": [
+        { "label": "Allosteric effector site", "residueRange": [1, 20], "kind": "allosteric_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "irreversible_mm",
+        "vMax": 1.0,
+        "km": { "f6p": 0.1, "atp": 0.1 },
+        "effectors": [
+          { "metaboliteId": "amp", "mode": "activator", "kA_or_kI": 0.03 },
+          { "metaboliteId": "atp", "mode": "inhibitor", "kA_or_kI": 1.5 },
+          { "metaboliteId": "citrate", "mode": "inhibitor", "kA_or_kI": 0.4 }
+        ]
+      },
+      "regulationNotes": "The committed, rate-limiting step of glycolysis. Activated by AMP (low energy charge), inhibited by high ATP and citrate. Hormonal F2,6BP control (liver PFK2/FBPase2) is deferred — modeled later as a manual fed/fasted slider, not this effector list.",
+      "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.11, human PFKM" }]
+    },
+    {
+      "id": "ALDOA_muscle",
+      "enzymeSlot": "ALD_step",
+      "tissueContext": "muscle",
+      "geneName": "ALDOA",
+      "displayName": "Aldolase A",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "1ALD", "annotations": [
+        { "label": "Schiff-base lysine", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 1.5,
+        "km": { "f16bp": 0.02 },
+        "kmProducts": { "g3p": 0.1 },
+        "keq": 0.0001
+      },
+      "regulationNotes": "Cleaves F1,6BP into DHAP and G3P; endergonic but pulled forward by downstream consumption.",
+      "citations": [{ "source": "BRENDA", "note": "EC 4.1.2.13, human ALDOA" }]
+    },
+    {
+      "id": "TPI1_muscle",
+      "enzymeSlot": "TPI_step",
+      "tissueContext": "muscle",
+      "geneName": "TPI1",
+      "displayName": "Triose phosphate isomerase",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "1TPH", "annotations": [
+        { "label": "Catalytic glutamate", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 10.0,
+        "km": { "dhap": 0.5 },
+        "kmProducts": { "g3p": 0.4 },
+        "keq": 0.045
+      },
+      "regulationNotes": "Extremely fast, near-diffusion-limited; equilibrium favors DHAP but flux is pulled toward G3P downstream.",
+      "citations": [{ "source": "BRENDA", "note": "EC 5.3.1.1, human TPI1" }]
+    },
+    {
+      "id": "GAPDH_muscle",
+      "enzymeSlot": "GAPDH_step",
+      "tissueContext": "muscle",
+      "geneName": "GAPDH",
+      "displayName": "Glyceraldehyde-3-phosphate dehydrogenase",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "1J0X", "annotations": [
+        { "label": "Catalytic cysteine", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 2.0,
+        "km": { "g3p": 0.1 },
+        "kmProducts": { "bpg13": 0.001 },
+        "keq": 0.06
+      },
+      "regulationNotes": "Only redox step in glycolysis; sensitive to cytosolic NAD+/NADH ratio (not yet modeled as a separate effector, folded into keq for now).",
+      "citations": [{ "source": "BRENDA", "note": "EC 1.2.1.12, human GAPDH" }]
+    },
+    {
+      "id": "PGK1_muscle",
+      "enzymeSlot": "PGK_step",
+      "tissueContext": "muscle",
+      "geneName": "PGK1",
+      "displayName": "Phosphoglycerate kinase 1",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "3PGK", "annotations": [
+        { "label": "ATP-binding domain", "residueRange": [1, 20], "kind": "cofactor_binding", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 5.0,
+        "km": { "bpg13": 0.002 },
+        "kmProducts": { "pg3": 1.0 },
+        "keq": 3200
+      },
+      "regulationNotes": "First substrate-level phosphorylation; strongly favors ATP formation physiologically despite a modest Keq, driven by rapid 1,3-BPG turnover.",
+      "citations": [{ "source": "BRENDA", "note": "EC 2.7.2.3, human PGK1" }]
+    },
+    {
+      "id": "PGAM1_muscle",
+      "enzymeSlot": "PGM_step",
+      "tissueContext": "muscle",
+      "geneName": "PGAM1",
+      "displayName": "Phosphoglycerate mutase 1",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "1YFK", "annotations": [
+        { "label": "Phosphohistidine intermediate site", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 4.0,
+        "km": { "pg3": 0.2 },
+        "kmProducts": { "pg2": 0.1 },
+        "keq": 0.17
+      },
+      "regulationNotes": "Near-equilibrium isomerization; not a control point.",
+      "citations": [{ "source": "BRENDA", "note": "EC 5.4.2.11, human PGAM1" }]
+    },
+    {
+      "id": "ENO3_muscle",
+      "enzymeSlot": "ENO_step",
+      "tissueContext": "muscle",
+      "geneName": "ENO3",
+      "displayName": "Beta-enolase (muscle-specific enolase)",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "2XSX", "annotations": [
+        { "label": "Mg2+ coordination site", "residueRange": [1, 20], "kind": "cofactor_binding", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "reversible_mm",
+        "vMax": 3.0,
+        "km": { "pg2": 0.1 },
+        "kmProducts": { "pep": 0.14 },
+        "keq": 1.7
+      },
+      "regulationNotes": "Mg2+-dependent dehydration; near-equilibrium.",
+      "citations": [{ "source": "BRENDA", "note": "EC 4.2.1.11, human ENO3" }]
+    },
+    {
+      "id": "PKM1_muscle",
+      "enzymeSlot": "PK_step",
+      "tissueContext": "muscle",
+      "geneName": "PKM",
+      "displayName": "Pyruvate kinase M1 (muscle isoform)",
+      "compartment": "cytosol",
+      "structure": { "pdbId": "3SRF", "annotations": [
+        { "label": "Active site", "residueRange": [1, 20], "kind": "active_site", "note": "Placeholder range — verify against structure before publishing." }
+      ] },
+      "rateLaw": {
+        "type": "irreversible_mm",
+        "vMax": 2.5,
+        "km": { "pep": 0.08, "adp": 0.3 },
+        "effectors": [
+          { "metaboliteId": "f16bp", "mode": "activator", "kA_or_kI": 0.15 }
+        ]
+      },
+      "regulationNotes": "PKM1 is constitutively active (unlike the allosteric PKM2 splice isoform found in some tissues); feed-forward activation by F1,6BP is retained here as a simplification.",
+      "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.40, human PKM1" }]
     }
   ]
 }

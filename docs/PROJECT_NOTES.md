@@ -74,26 +74,37 @@ Core objectives:
 ## What exists in the repo right now
 
 - `src/types/schema.ts` — full data model (see above)
-- `src/data/glycolysis/` — sample data: 8 metabolites, first 2 reactions
-  (hexokinase, PGI), hexokinase muscle + liver isoforms
+- `src/data/glycolysis/` — full glycolysis pathway: 18 metabolites/cofactors,
+  all 10 reactions (glucose -> pyruvate), 11 muscle isoforms + 1 liver
+  isoform (`GCK_liver`, HK step only — other steps stay muscle-only per
+  scope discipline)
 - `src/sim/rateLaws.ts` — rate law dispatcher, all 3 types + effectors
-- `src/App.tsx` — placeholder proving the pipeline works end-to-end (not
-  the real UI)
+- `src/components/PathwayMap.tsx` — real SVG pathway map: renders all 10
+  reaction steps as a static node-and-edge layout (hand-placed lattice
+  coordinates, not D3 yet), correctly shows the aldolase branch / TPI merge.
+  Enzyme nodes and reaction edges are clickable via `onEnzymeClick` /
+  `onReactionClick` props.
+- `src/App.tsx` — wires `PathwayMap` to tissue-context state and a minimal
+  detail panel below the map (shows selected isoform or reaction info as
+  plain text — not yet the real structure viewer / reaction panel)
 - `docs/schema.md` — design rationale for the data model
-- `src/components/` — empty, placeholder for real UI components
+- `docs/PROJECT_NOTES.md` — this file
 
 ## Next step
 
-Build the real SVG pathway map component to replace the placeholder in
-`App.tsx`:
-- Render all glycolysis metabolites/reactions as a static node-and-edge
-  layout (don't worry about flux animation yet — just get the topology
-  rendering correctly first)
-- Make enzyme nodes and reaction edges clickable (wire up to `sendPrompt`-
-  style handlers or local state — structure viewer and reaction panel
-  content come after this)
-- Extend sample data from 2 reactions to the full glycolysis pathway
-  (10 steps, glucose -> pyruvate) before building further UI
+Replace the placeholder detail panel in `App.tsx` with the real UI pieces:
+- Structure viewer: on enzyme node click, load the isoform's `pdbId` into
+  Mol* or NGL Viewer and highlight `structure.annotations` residue ranges
+  (currently just placeholder ranges — verify against real PDB numbering
+  before this is user-facing)
+- Reaction panel: on reaction edge click, show the full equation,
+  `mechanismNotes`, `deltaGNote`, and citations in a proper panel (not the
+  current one-line text dump)
+- Once both panels exist: wire the "add glucose" / flux-through-time
+  objective (objective 4) using `computeRate` + client-side ODE integration
+  over the full 10-step dataset that now exists
+- Still deferred, per scope discipline: liver isoforms for steps other than
+  HK, inhibitors, genetic variants
 
 ## Session log
 
@@ -104,3 +115,12 @@ Build the real SVG pathway map component to replace the placeholder in
 - Session 3: environment setup — scaffolded the repo (schema, sample data,
   rate law dispatcher, minimal proving App.tsx), set up WSL + SSH git auth,
   pushed to GitHub, confirmed `npm run dev` works.
+- Session 4: extended sample data from 2 reactions to the full 10-step
+  glycolysis pathway (added all remaining metabolites, reactions, enzyme
+  slots, and muscle isoforms with BRENDA-referenced EC numbers and
+  illustrative kinetic parameters — flagged as needing verification before
+  publishing, same as the existing structure annotation placeholders).
+  Built `PathwayMap.tsx`, a static SVG component rendering the full
+  topology with clickable enzyme nodes and reaction edges, and wired it
+  into `App.tsx` with a minimal placeholder detail panel. Verified with
+  `tsc -b` and `vite build` — both clean.

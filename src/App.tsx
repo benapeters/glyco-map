@@ -2,59 +2,107 @@ import { useState } from "react";
 import metabolites from "./data/glycolysis/metabolites.json";
 import reactions from "./data/glycolysis/reactions.json";
 import enzymeData from "./data/glycolysis/enzymes.json";
-import { computeRate } from "./sim/rateLaws";
-import type { EnzymeIsoform, TissueContext } from "./types/schema";
+import PathwayMap from "./components/PathwayMap";
+import type {
+  EnzymeIsoform,
+  EnzymeSlot,
+  Metabolite,
+  PathwayDataset,
+  Reaction,
+  TissueContext,
+} from "./types/schema";
 
-const isoforms = enzymeData.isoforms as EnzymeIsoform[];
+// JSON imports widen literal fields (e.g. `compartment: string` instead of
+// the `Compartment` union) — cast through `unknown` at this single boundary
+// rather than losing type-checking on the data model everywhere it's used.
+const dataset: PathwayDataset = {
+  metabolites: metabolites as unknown as Metabolite[],
+  reactions: reactions as unknown as Reaction[],
+  enzymeSlots: enzymeData.enzymeSlots as unknown as EnzymeSlot[],
+  isoforms: enzymeData.isoforms as unknown as EnzymeIsoform[],
+};
 
 export default function App() {
   const [tissue, setTissue] = useState<TissueContext>("muscle");
-  const [glucose, setGlucose] = useState(5);
+  const [selectedEnzymeSlot, setSelectedEnzymeSlot] = useState<string | null>(null);
+  const [selectedReactionId, setSelectedReactionId] = useState<string | null>(null);
 
-  const hkIsoform = isoforms.find(
-    (iso) => iso.enzymeSlot === "HK_step" && iso.tissueContext === tissue
-  );
+  const selectedIsoform = selectedEnzymeSlot
+    ? dataset.isoforms.find(
+        (iso) => iso.enzymeSlot === selectedEnzymeSlot && iso.tissueContext === tissue
+      )
+    : undefined;
 
-  const rate = hkIsoform
-    ? computeRate(hkIsoform.rateLaw, { glucose, atp: 2, g6p: 0.1 })
+  const selectedReaction = selectedReactionId
+    ? dataset.reactions.find((r) => r.id === selectedReactionId)
     : undefined;
 
   return (
-    <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 640 }}>
-      <h1>Glycolysis map — scaffold check</h1>
-      <p>
-        This confirms the data pipeline works end to end: JSON data loads,
-        types check, and the rate-law dispatcher runs. Replace this with the
-        real map component next.
-      </p>
+    <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1100 }}>
+      <h1>Glycolysis map</h1>
 
       <label>
         Tissue context:{" "}
-        <select value={tissue} onChange={(e) => setTissue(e.target.value as TissueContext)}>
+        <select
+          value={tissue}
+          onChange={(e) => setTissue(e.target.value as TissueContext)}
+        >
           <option value="muscle">Muscle</option>
           <option value="liver">Liver</option>
         </select>
       </label>
-      <br />
-      <label>
-        Glucose (mM):{" "}
-        <input
-          type="number"
-          value={glucose}
-          step={0.5}
-          onChange={(e) => setGlucose(Number(e.target.value))}
-        />
-      </label>
 
-      <h2>Active isoform</h2>
-      <p>{hkIsoform ? hkIsoform.displayName : "none found"}</p>
-      <p>Computed rate: {rate !== undefined ? rate.toFixed(4) : "n/a"} mM/s</p>
+      <div style={{ marginTop: "1.5rem", overflowX: "auto" }}>
+        <PathwayMap
+          dataset={dataset}
+          tissue={tissue}
+          selectedEnzymeSlot={selectedEnzymeSlot}
+          selectedReactionId={selectedReactionId}
+          onEnzymeClick={(slotId) => {
+            setSelectedEnzymeSlot(slotId);
+            setSelectedReactionId(null);
+          }}
+          onReactionClick={(reactionId) => {
+            setSelectedReactionId(reactionId);
+            setSelectedEnzymeSlot(null);
+          }}
+        />
+      </div>
+
+      {/* Placeholder detail panel — structure viewer (enzyme click) and
+          reaction/mechanism panel (reaction click) are the next pieces of
+          UI to build on top of this, per docs/PROJECT_NOTES.md. */}
+      <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
+        {selectedIsoform && (
+          <div>
+            <h2>{selectedIsoform.displayName}</h2>
+            <p>
+              Gene: {selectedIsoform.geneName} · Rate law: {selectedIsoform.rateLaw.type} ·
+              PDB: {selectedIsoform.structure.pdbId}
+            </p>
+            <p>{selectedIsoform.regulationNotes}</p>
+          </div>
+        )}
+        {selectedReaction && (
+          <div>
+            <h2>{selectedReaction.name}</h2>
+            <p>{selectedReaction.equation}</p>
+            <p>{selectedReaction.mechanismNotes}</p>
+          </div>
+        )}
+        {!selectedIsoform && !selectedReaction && (
+          <p style={{ color: "#64748b" }}>
+            Click an enzyme node (circle) or a reaction edge (arrow) above for details.
+          </p>
+        )}
+      </div>
 
       <h2>Loaded data counts</h2>
       <ul>
-        <li>Metabolites: {metabolites.length}</li>
-        <li>Reactions: {reactions.length}</li>
-        <li>Isoforms: {isoforms.length}</li>
+        <li>Metabolites: {dataset.metabolites.length}</li>
+        <li>Reactions: {dataset.reactions.length}</li>
+        <li>Enzyme slots: {dataset.enzymeSlots.length}</li>
+        <li>Isoforms: {dataset.isoforms.length}</li>
       </ul>
     </div>
   );

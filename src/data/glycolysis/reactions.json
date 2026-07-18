@@ -22,5 +22,101 @@
     "deltaGNote": "Near-equilibrium under physiological conditions.",
     "mechanismNotes": "Aldose-ketose isomerization via a cis-enediol intermediate.",
     "citations": [{ "source": "BRENDA", "note": "EC 5.3.1.9" }]
+  },
+  {
+    "id": "pfk1_reaction",
+    "name": "Phosphofructokinase-1 reaction",
+    "equation": "F6P + ATP -> F1,6BP + ADP",
+    "substrateIds": ["f6p", "atp"],
+    "productIds": ["f16bp", "adp"],
+    "compartment": "cytosol",
+    "reversible": false,
+    "deltaGNote": "Strongly exergonic and physiologically irreversible; the committed, allosterically regulated step of glycolysis proper.",
+    "mechanismNotes": "Transfers the gamma-phosphate of ATP to the 1-hydroxyl of F6P. Rate-limiting and heavily regulated by AMP/ATP/citrate (F2,6BP-driven hormonal control deferred, see docs/schema.md).",
+    "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.11" }]
+  },
+  {
+    "id": "aldolase_reaction",
+    "name": "Aldolase reaction",
+    "equation": "F1,6BP <-> DHAP + G3P",
+    "substrateIds": ["f16bp"],
+    "productIds": ["dhap", "g3p"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Endergonic under standard conditions but pulled forward physiologically by rapid downstream consumption of triose phosphates.",
+    "mechanismNotes": "Aldol cleavage of F1,6BP into two 3-carbon triose phosphates (class I aldolase, Schiff-base mechanism in humans).",
+    "citations": [{ "source": "BRENDA", "note": "EC 4.1.2.13" }]
+  },
+  {
+    "id": "tpi_reaction",
+    "name": "Triose phosphate isomerase reaction",
+    "equation": "DHAP <-> G3P",
+    "substrateIds": ["dhap"],
+    "productIds": ["g3p"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium; strongly favors DHAP at equilibrium but G3P is continuously drained downstream, pulling flux forward.",
+    "mechanismNotes": "Interconverts the two triose phosphates via a cis-enediol intermediate, effectively routing both aldolase products through the rest of glycolysis as G3P.",
+    "citations": [{ "source": "BRENDA", "note": "EC 5.3.1.1" }]
+  },
+  {
+    "id": "gapdh_reaction",
+    "name": "Glyceraldehyde-3-phosphate dehydrogenase reaction",
+    "equation": "G3P + NAD+ + Pi <-> 1,3-BPG + NADH",
+    "substrateIds": ["g3p", "nad", "pi"],
+    "productIds": ["bpg13", "nadh"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium; the only redox (NAD+/NADH) step in glycolysis proper.",
+    "mechanismNotes": "Oxidizes the aldehyde of G3P and couples the resulting acyl-enzyme intermediate to inorganic phosphate, producing a high-energy acyl-phosphate.",
+    "citations": [{ "source": "BRENDA", "note": "EC 1.2.1.12" }]
+  },
+  {
+    "id": "pgk_reaction",
+    "name": "Phosphoglycerate kinase reaction",
+    "equation": "1,3-BPG + ADP <-> 3-PG + ATP",
+    "substrateIds": ["bpg13", "adp"],
+    "productIds": ["pg3", "atp"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium; first substrate-level phosphorylation step of glycolysis.",
+    "mechanismNotes": "Transfers the high-energy acyl-phosphate of 1,3-BPG to ADP.",
+    "citations": [{ "source": "BRENDA", "note": "EC 2.7.2.3" }]
+  },
+  {
+    "id": "pgm_reaction",
+    "name": "Phosphoglycerate mutase reaction",
+    "equation": "3-PG <-> 2-PG",
+    "substrateIds": ["pg3"],
+    "productIds": ["pg2"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium.",
+    "mechanismNotes": "Intramolecular phosphoryl shift from C3 to C2 via a 2,3-bisphosphoglycerate enzyme intermediate.",
+    "citations": [{ "source": "BRENDA", "note": "EC 5.4.2.11" }]
+  },
+  {
+    "id": "enolase_reaction",
+    "name": "Enolase reaction",
+    "equation": "2-PG <-> PEP + H2O",
+    "substrateIds": ["pg2"],
+    "productIds": ["pep"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium dehydration; concentrates chemical potential into a high-energy enol phosphate.",
+    "mechanismNotes": "Mg2+-dependent dehydration of 2-PG to form the enol phosphate PEP.",
+    "citations": [{ "source": "BRENDA", "note": "EC 4.2.1.11" }]
+  },
+  {
+    "id": "pk_reaction",
+    "name": "Pyruvate kinase reaction",
+    "equation": "PEP + ADP -> pyruvate + ATP",
+    "substrateIds": ["pep", "adp"],
+    "productIds": ["pyruvate", "atp"],
+    "compartment": "cytosol",
+    "reversible": false,
+    "deltaGNote": "Strongly exergonic and physiologically irreversible; second substrate-level phosphorylation and final committed step of glycolysis.",
+    "mechanismNotes": "Transfers the phosphate of PEP to ADP; spontaneous tautomerization of the resulting enolpyruvate to pyruvate contributes most of the driving force.",
+    "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.40" }]
   }
 ]
