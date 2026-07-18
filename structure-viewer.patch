@@ -1,0 +1,364 @@
+diff --git a/docs/PROJECT_NOTES.md b/docs/PROJECT_NOTES.md
+index 08b6862..14c712e 100644
+--- a/docs/PROJECT_NOTES.md
++++ b/docs/PROJECT_NOTES.md
+@@ -26,8 +26,12 @@ Core objectives:
+ - **Stack**: React + TypeScript + Vite, static build only, no backend.
+   Deployable to GitHub Pages or university static hosting as-is.
+ - **Map**: custom SVG, D3 for layout/scales (not yet built).
+-- **Structure viewer**: Mol* or NGL Viewer, loads PDB/mmCIF, supports
+-  residue-level annotation (not yet integrated).
++- **Structure viewer**: NGL Viewer (chosen over Mol* — lighter runtime
++  bundle for our scale, simpler API; revisit if/when we need cinematic
++  state-to-state transitions for allosteric enzymes like PFK-1). Loads
++  structures via `rcsb://<pdbId>`, highlights `structure.annotations`
++  residue ranges with per-`kind` colored representations. NGL is loaded
++  via dynamic `import()` so it doesn't block initial page load.
+ - **Simulation**: client-side ODE integration, runs in-browser
+   (Michaelis-Menten scale systems are cheap — no backend compute needed).
+ - **Data model** (`src/types/schema.ts`):
+@@ -84,19 +88,23 @@ Core objectives:
+   coordinates, not D3 yet), correctly shows the aldolase branch / TPI merge.
+   Enzyme nodes and reaction edges are clickable via `onEnzymeClick` /
+   `onReactionClick` props.
+-- `src/App.tsx` — wires `PathwayMap` to tissue-context state and a minimal
+-  detail panel below the map (shows selected isoform or reaction info as
+-  plain text — not yet the real structure viewer / reaction panel)
++- `src/components/StructureViewer.tsx` — real structure viewer using NGL:
++  loads the selected isoform's `structure.pdbId` from RCSB, draws a cartoon
++  with each `structure.annotations` residue range highlighted by `kind`
++  (color-coded), a legend/list below the viewer, and click-to-focus on an
++  annotation. Residue ranges are still the placeholder values noted above —
++  not yet verified against real PDB numbering.
++- `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
++  now renders the real `StructureViewer` (not yet the real reaction panel,
++  which still shows plain text)
+ - `docs/schema.md` — design rationale for the data model
+ - `docs/PROJECT_NOTES.md` — this file
+ 
+ ## Next step
+ 
+-Replace the placeholder detail panel in `App.tsx` with the real UI pieces:
+-- Structure viewer: on enzyme node click, load the isoform's `pdbId` into
+-  Mol* or NGL Viewer and highlight `structure.annotations` residue ranges
+-  (currently just placeholder ranges — verify against real PDB numbering
+-  before this is user-facing)
++Structure viewer is done (see above) — still need to verify placeholder
++residue ranges against real PDB numbering before this is user-facing.
++Remaining UI piece:
+ - Reaction panel: on reaction edge click, show the full equation,
+   `mechanismNotes`, `deltaGNote`, and citations in a proper panel (not the
+   current one-line text dump)
+@@ -124,3 +132,14 @@ Replace the placeholder detail panel in `App.tsx` with the real UI pieces:
+   topology with clickable enzyme nodes and reaction edges, and wired it
+   into `App.tsx` with a minimal placeholder detail panel. Verified with
+   `tsc -b` and `vite build` — both clean.
++- Session 5: chose NGL over Mol* for the structure viewer (lighter runtime
++  bundle at our scale; Mol*'s snapshot/state-interpolation system is more
++  polished for allosteric state animation but not needed yet — revisit if
++  PFK-1 T-state/R-state animation becomes a priority). Built
++  `StructureViewer.tsx`: loads structures from RCSB, highlights annotated
++  residue ranges color-coded by kind, click-to-focus. Verified `tsc -b`/
++  `vite build` clean; NGL code-splits into its own ~371KB gzip chunk via
++  dynamic `import()`, so it doesn't cost anything on initial page load.
++  Not yet verified in a real browser against a live RCSB fetch (sandboxed
++  build environment couldn't reach rcsb.org) — check this first with
++  `npm run dev` locally before trusting it end-to-end.
+diff --git a/package.json b/package.json
+index 00c41e1..617d860 100644
+--- a/package.json
++++ b/package.json
+@@ -11,19 +11,20 @@
+     "format": "prettier --write ."
+   },
+   "dependencies": {
++    "d3": "^7.9.0",
++    "ngl": "^2.4.0",
+     "react": "^18.3.1",
+     "react-dom": "^18.3.1",
+-    "d3": "^7.9.0",
+     "zod": "^3.23.8"
+   },
+   "devDependencies": {
++    "@types/d3": "^7.4.3",
+     "@types/react": "^18.3.3",
+     "@types/react-dom": "^18.3.0",
+-    "@types/d3": "^7.4.3",
+     "@vitejs/plugin-react": "^4.3.1",
+-    "typescript": "^5.5.4",
+-    "vite": "^5.4.0",
+     "eslint": "^8.57.0",
+-    "prettier": "^3.3.3"
++    "prettier": "^3.3.3",
++    "typescript": "^5.5.4",
++    "vite": "^5.4.0"
+   }
+ }
+diff --git a/src/App.tsx b/src/App.tsx
+index 464d1b4..e75f80f 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -3,6 +3,7 @@ import metabolites from "./data/glycolysis/metabolites.json";
+ import reactions from "./data/glycolysis/reactions.json";
+ import enzymeData from "./data/glycolysis/enzymes.json";
+ import PathwayMap from "./components/PathwayMap";
++import StructureViewer from "./components/StructureViewer";
+ import type {
+   EnzymeIsoform,
+   EnzymeSlot,
+@@ -69,9 +70,9 @@ export default function App() {
+         />
+       </div>
+ 
+-      {/* Placeholder detail panel — structure viewer (enzyme click) and
+-          reaction/mechanism panel (reaction click) are the next pieces of
+-          UI to build on top of this, per docs/PROJECT_NOTES.md. */}
++      {/* Structure viewer (enzyme click) is now real (NGL). Reaction/mechanism
++          panel (reaction click) is still the next piece of UI to build on
++          top of this, per docs/PROJECT_NOTES.md. */}
+       <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
+         {selectedIsoform && (
+           <div>
+@@ -81,6 +82,7 @@ export default function App() {
+               PDB: {selectedIsoform.structure.pdbId}
+             </p>
+             <p>{selectedIsoform.regulationNotes}</p>
++            <StructureViewer isoform={selectedIsoform} />
+           </div>
+         )}
+         {selectedReaction && (
+diff --git a/src/components/StructureViewer.tsx b/src/components/StructureViewer.tsx
+new file mode 100644
+index 0000000..016deb5
+--- /dev/null
++++ b/src/components/StructureViewer.tsx
+@@ -0,0 +1,229 @@
++import { useEffect, useRef, useState } from "react";
++import type { Stage as NglStage, StructureComponent } from "ngl";
++import type { EnzymeIsoform, StructureAnnotation } from "../types/schema";
++
++/** Color per annotation `kind`, kept distinct from the default cartoon color. */
++const KIND_COLORS: Record<StructureAnnotation["kind"], string> = {
++  active_site: "#dc2626", // red
++  cofactor_binding: "#d97706", // amber
++  allosteric_site: "#7c3aed", // violet
++  mutation: "#059669", // green
++  other: "#64748b", // slate
++};
++
++const KIND_LABELS: Record<StructureAnnotation["kind"], string> = {
++  active_site: "Active site",
++  cofactor_binding: "Cofactor binding",
++  allosteric_site: "Allosteric site",
++  mutation: "Mutation",
++  other: "Other",
++};
++
++export interface StructureViewerProps {
++  isoform: EnzymeIsoform;
++}
++
++type LoadState = "loading" | "ready" | "error";
++
++export default function StructureViewer({ isoform }: StructureViewerProps) {
++  const containerRef = useRef<HTMLDivElement>(null);
++  const stageRef = useRef<NglStage | null>(null);
++  const [loadState, setLoadState] = useState<LoadState>("loading");
++  const [errorMessage, setErrorMessage] = useState<string>("");
++  const [hoveredAnnotation, setHoveredAnnotation] = useState<number | null>(null);
++
++  // Create the Stage once, on mount. Dispose it on unmount.
++  useEffect(() => {
++    if (!containerRef.current) return;
++    let cancelled = false;
++
++    // Dynamic import: NGL touches `window`/WebGL at module init in some
++    // builds, so keep it out of the SSR/initial bundle path and only pull it
++    // in when this component actually mounts.
++    import("ngl").then(({ Stage }) => {
++      if (cancelled || !containerRef.current) return;
++      const stage = new Stage(containerRef.current, {
++        backgroundColor: "#f8fafc",
++      });
++      stageRef.current = stage;
++    });
++
++    const handleResize = () => stageRef.current?.handleResize();
++    window.addEventListener("resize", handleResize);
++
++    return () => {
++      cancelled = true;
++      window.removeEventListener("resize", handleResize);
++      stageRef.current?.dispose();
++      stageRef.current = null;
++    };
++    // Stage is created once per mount; structure loading below reacts to
++    // isoform changes independently instead of recreating the Stage.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
++
++  // Load (or reload) the structure whenever the isoform changes.
++  useEffect(() => {
++    let cancelled = false;
++    setLoadState("loading");
++    setErrorMessage("");
++    setHoveredAnnotation(null);
++
++    const load = async () => {
++      // Wait for the Stage to exist (it's created asynchronously above).
++      let attempts = 0;
++      while (!stageRef.current && attempts < 50 && !cancelled) {
++        await new Promise((resolve) => setTimeout(resolve, 20));
++        attempts += 1;
++      }
++      const stage = stageRef.current;
++      if (!stage || cancelled) return;
++
++      stage.removeAllComponents();
++
++      try {
++        const component = (await stage.loadFile(
++          `rcsb://${isoform.structure.pdbId}`,
++          { defaultRepresentation: false }
++        )) as StructureComponent | undefined;
++
++        if (cancelled || !component) return;
++
++        component.addRepresentation("cartoon", {
++          color: "#cbd5e1",
++          opacity: 1,
++        });
++
++        // One highlighted representation per annotated residue range, plus
++        // a text label anchored to its midpoint.
++        isoform.structure.annotations.forEach((annotation) => {
++          const [start, end] = annotation.residueRange;
++          const sele = `${start}-${end}`;
++          const color = KIND_COLORS[annotation.kind];
++
++          component.addRepresentation("cartoon", {
++            sele,
++            color,
++            opacity: 1,
++          });
++          component.addRepresentation("ball+stick", {
++            sele: `${sele} and sidechainAttached`,
++            color,
++          });
++        });
++
++        component.autoView(undefined, 0);
++        if (!cancelled) setLoadState("ready");
++      } catch (err) {
++        if (!cancelled) {
++          setErrorMessage(
++            err instanceof Error ? err.message : "Failed to load structure"
++          );
++          setLoadState("error");
++        }
++      }
++    };
++
++    load();
++
++    return () => {
++      cancelled = true;
++    };
++  }, [isoform]);
++
++  const focusAnnotation = (annotation: StructureAnnotation) => {
++    const stage = stageRef.current;
++    if (!stage) return;
++    const [start, end] = annotation.residueRange;
++    const component = stage.compList.find(
++      (c): c is StructureComponent => "structure" in c
++    );
++    component?.autoView(`${start}-${end}`, 500);
++  };
++
++  return (
++    <div>
++      <div
++        ref={containerRef}
++        style={{
++          width: "100%",
++          height: 360,
++          borderRadius: 8,
++          border: "1px solid #cbd5e1",
++          position: "relative",
++          background: "#f8fafc",
++        }}
++      >
++        {loadState === "loading" && (
++          <div style={overlayStyle}>Loading {isoform.structure.pdbId}…</div>
++        )}
++        {loadState === "error" && (
++          <div style={{ ...overlayStyle, color: "#dc2626" }}>
++            Couldn't load structure {isoform.structure.pdbId}
++            {errorMessage ? `: ${errorMessage}` : ""}
++          </div>
++        )}
++      </div>
++
++      {isoform.structure.annotations.length > 0 && (
++        <ul style={{ listStyle: "none", padding: 0, marginTop: "0.75rem" }}>
++          {isoform.structure.annotations.map((annotation, i) => (
++            <li
++              key={i}
++              onMouseEnter={() => setHoveredAnnotation(i)}
++              onMouseLeave={() => setHoveredAnnotation(null)}
++              onClick={() => focusAnnotation(annotation)}
++              style={{
++                display: "flex",
++                alignItems: "flex-start",
++                gap: "0.5rem",
++                padding: "0.4rem 0.5rem",
++                borderRadius: 6,
++                cursor: loadState === "ready" ? "pointer" : "default",
++                background: hoveredAnnotation === i ? "#f1f5f9" : "transparent",
++              }}
++            >
++              <span
++                style={{
++                  display: "inline-block",
++                  width: 10,
++                  height: 10,
++                  borderRadius: "50%",
++                  marginTop: 4,
++                  flexShrink: 0,
++                  background: KIND_COLORS[annotation.kind],
++                }}
++              />
++              <span>
++                <strong>{annotation.label}</strong>{" "}
++                <span style={{ color: "#64748b", fontSize: "0.85em" }}>
++                  ({KIND_LABELS[annotation.kind]}, residues{" "}
++                  {annotation.residueRange[0]}–{annotation.residueRange[1]})
++                </span>
++                {annotation.note && (
++                  <>
++                    <br />
++                    <span style={{ color: "#64748b", fontSize: "0.85em" }}>
++                      {annotation.note}
++                    </span>
++                  </>
++                )}
++              </span>
++            </li>
++          ))}
++        </ul>
++      )}
++    </div>
++  );
++}
++
++const overlayStyle: React.CSSProperties = {
++  position: "absolute",
++  inset: 0,
++  display: "flex",
++  alignItems: "center",
++  justifyContent: "center",
++  color: "#64748b",
++  fontSize: "0.9rem",
++  pointerEvents: "none",
++};

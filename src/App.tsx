@@ -3,6 +3,7 @@ import metabolites from "./data/glycolysis/metabolites.json";
 import reactions from "./data/glycolysis/reactions.json";
 import enzymeData from "./data/glycolysis/enzymes.json";
 import PathwayMap from "./components/PathwayMap";
+import StructureViewer from "./components/StructureViewer";
 import type {
   EnzymeIsoform,
   EnzymeSlot,
@@ -69,9 +70,9 @@ export default function App() {
         />
       </div>
 
-      {/* Placeholder detail panel — structure viewer (enzyme click) and
-          reaction/mechanism panel (reaction click) are the next pieces of
-          UI to build on top of this, per docs/PROJECT_NOTES.md. */}
+      {/* Structure viewer (enzyme click) is now real (NGL). Reaction/mechanism
+          panel (reaction click) is still the next piece of UI to build on
+          top of this, per docs/PROJECT_NOTES.md. */}
       <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
         {selectedIsoform && (
           <div>
@@ -81,6 +82,7 @@ export default function App() {
               PDB: {selectedIsoform.structure.pdbId}
             </p>
             <p>{selectedIsoform.regulationNotes}</p>
+            <StructureViewer isoform={selectedIsoform} />
           </div>
         )}
         {selectedReaction && (

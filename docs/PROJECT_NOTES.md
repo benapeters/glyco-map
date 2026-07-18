@@ -26,8 +26,12 @@ Core objectives:
 - **Stack**: React + TypeScript + Vite, static build only, no backend.
   Deployable to GitHub Pages or university static hosting as-is.
 - **Map**: custom SVG, D3 for layout/scales (not yet built).
-- **Structure viewer**: Mol* or NGL Viewer, loads PDB/mmCIF, supports
-  residue-level annotation (not yet integrated).
+- **Structure viewer**: NGL Viewer (chosen over Mol* — lighter runtime
+  bundle for our scale, simpler API; revisit if/when we need cinematic
+  state-to-state transitions for allosteric enzymes like PFK-1). Loads
+  structures via `rcsb://<pdbId>`, highlights `structure.annotations`
+  residue ranges with per-`kind` colored representations. NGL is loaded
+  via dynamic `import()` so it doesn't block initial page load.
 - **Simulation**: client-side ODE integration, runs in-browser
   (Michaelis-Menten scale systems are cheap — no backend compute needed).
 - **Data model** (`src/types/schema.ts`):
@@ -84,19 +88,23 @@ Core objectives:
   coordinates, not D3 yet), correctly shows the aldolase branch / TPI merge.
   Enzyme nodes and reaction edges are clickable via `onEnzymeClick` /
   `onReactionClick` props.
-- `src/App.tsx` — wires `PathwayMap` to tissue-context state and a minimal
-  detail panel below the map (shows selected isoform or reaction info as
-  plain text — not yet the real structure viewer / reaction panel)
+- `src/components/StructureViewer.tsx` — real structure viewer using NGL:
+  loads the selected isoform's `structure.pdbId` from RCSB, draws a cartoon
+  with each `structure.annotations` residue range highlighted by `kind`
+  (color-coded), a legend/list below the viewer, and click-to-focus on an
+  annotation. Residue ranges are still the placeholder values noted above —
+  not yet verified against real PDB numbering.
+- `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
+  now renders the real `StructureViewer` (not yet the real reaction panel,
+  which still shows plain text)
 - `docs/schema.md` — design rationale for the data model
 - `docs/PROJECT_NOTES.md` — this file
 
 ## Next step
 
-Replace the placeholder detail panel in `App.tsx` with the real UI pieces:
-- Structure viewer: on enzyme node click, load the isoform's `pdbId` into
-  Mol* or NGL Viewer and highlight `structure.annotations` residue ranges
-  (currently just placeholder ranges — verify against real PDB numbering
-  before this is user-facing)
+Structure viewer is done (see above) — still need to verify placeholder
+residue ranges against real PDB numbering before this is user-facing.
+Remaining UI piece:
 - Reaction panel: on reaction edge click, show the full equation,
   `mechanismNotes`, `deltaGNote`, and citations in a proper panel (not the
   current one-line text dump)
@@ -124,3 +132,14 @@ Replace the placeholder detail panel in `App.tsx` with the real UI pieces:
   topology with clickable enzyme nodes and reaction edges, and wired it
   into `App.tsx` with a minimal placeholder detail panel. Verified with
   `tsc -b` and `vite build` — both clean.
+- Session 5: chose NGL over Mol* for the structure viewer (lighter runtime
+  bundle at our scale; Mol*'s snapshot/state-interpolation system is more
+  polished for allosteric state animation but not needed yet — revisit if
+  PFK-1 T-state/R-state animation becomes a priority). Built
+  `StructureViewer.tsx`: loads structures from RCSB, highlights annotated
+  residue ranges color-coded by kind, click-to-focus. Verified `tsc -b`/
+  `vite build` clean; NGL code-splits into its own ~371KB gzip chunk via
+  dynamic `import()`, so it doesn't cost anything on initial page load.
+  Not yet verified in a real browser against a live RCSB fetch (sandboxed
+  build environment couldn't reach rcsb.org) — check this first with
+  `npm run dev` locally before trusting it end-to-end.
