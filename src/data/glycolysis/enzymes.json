@@ -1,0 +1,64 @@
+{
+  "enzymeSlots": [
+    { "id": "HK_step", "name": "Glucose phosphorylation", "reactionId": "hk_reaction" },
+    { "id": "PGI_step", "name": "Glucose-6-P isomerization", "reactionId": "pgi_reaction" }
+  ],
+  "isoforms": [
+    {
+      "id": "HK1_muscle",
+      "enzymeSlot": "HK_step",
+      "tissueContext": "muscle",
+      "geneName": "HK1",
+      "displayName": "Hexokinase I",
+      "compartment": "cytosol",
+      "structure": {
+        "pdbId": "1HKC",
+        "annotations": [
+          {
+            "label": "Catalytic cleft",
+            "residueRange": [1, 20],
+            "kind": "active_site",
+            "note": "Placeholder range — verify against structure before publishing."
+          }
+        ]
+      },
+      "rateLaw": {
+        "type": "irreversible_mm",
+        "vMax": 1.0,
+        "km": { "glucose": 0.05, "atp": 0.4 },
+        "effectors": [
+          { "metaboliteId": "g6p", "mode": "inhibitor", "kA_or_kI": 0.02 }
+        ]
+      },
+      "regulationNotes": "Product-inhibited by G6P; low Km keeps it saturated even at fasting blood glucose.",
+      "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.1, human HK1" }]
+    },
+    {
+      "id": "GCK_liver",
+      "enzymeSlot": "HK_step",
+      "tissueContext": "liver",
+      "geneName": "GCK",
+      "displayName": "Glucokinase (Hexokinase IV)",
+      "compartment": "cytosol",
+      "structure": {
+        "pdbId": "1V4S",
+        "annotations": [
+          {
+            "label": "Catalytic cleft",
+            "residueRange": [1, 20],
+            "kind": "active_site",
+            "note": "Placeholder range — verify against structure before publishing."
+          }
+        ]
+      },
+      "rateLaw": {
+        "type": "hill",
+        "vMax": 1.0,
+        "km": { "glucose": 8.0 },
+        "hillCoefficient": 1.7
+      },
+      "regulationNotes": "High Km and sigmoidal response let liver glucose uptake scale with blood glucose rather than saturating; not product-inhibited by G6P. Sequestered by GKRP in the fasted state (not yet modeled).",
+      "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.2, human GCK" }]
+    }
+  ]
+}

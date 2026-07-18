@@ -1,0 +1,26 @@
+[
+  {
+    "id": "hk_reaction",
+    "name": "Hexokinase reaction",
+    "equation": "glucose + ATP -> G6P + ADP",
+    "substrateIds": ["glucose", "atp"],
+    "productIds": ["g6p", "adp"],
+    "compartment": "cytosol",
+    "reversible": false,
+    "deltaGNote": "Strongly exergonic and physiologically irreversible; committed first step of glucose trapping in the cell.",
+    "mechanismNotes": "Transfers the gamma-phosphate of ATP to the 6-hydroxyl of glucose. Requires Mg2+-ATP as the true substrate.",
+    "citations": [{ "source": "BRENDA", "note": "EC 2.7.1.1" }]
+  },
+  {
+    "id": "pgi_reaction",
+    "name": "Phosphoglucose isomerase reaction",
+    "equation": "G6P <-> F6P",
+    "substrateIds": ["g6p"],
+    "productIds": ["f6p"],
+    "compartment": "cytosol",
+    "reversible": true,
+    "deltaGNote": "Near-equilibrium under physiological conditions.",
+    "mechanismNotes": "Aldose-ketose isomerization via a cis-enediol intermediate.",
+    "citations": [{ "source": "BRENDA", "note": "EC 5.3.1.9" }]
+  }
+]
