@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import metabolites from "./data/glycolysis/metabolites.json";
 import reactions from "./data/glycolysis/reactions.json";
 import enzymeData from "./data/glycolysis/enzymes.json";
@@ -6,6 +6,8 @@ import PathwayMap from "./components/PathwayMap";
 import StructureViewer from "./components/StructureViewer";
 import ReactionPanel from "./components/ReactionPanel";
 import MetaboliteViewer from "./components/MetaboliteViewer";
+import SimulationPanel from "./components/SimulationPanel";
+import { resolveSteps } from "./sim/simulate";
 import type {
   EnzymeIsoform,
   EnzymeSlot,
@@ -30,6 +32,11 @@ export default function App() {
   const [selectedEnzymeSlot, setSelectedEnzymeSlot] = useState<string | null>(null);
   const [selectedReactionId, setSelectedReactionId] = useState<string | null>(null);
   const [selectedMetaboliteId, setSelectedMetaboliteId] = useState<string | null>(null);
+  const [reactionFlux, setReactionFlux] = useState<Record<string, number>>({});
+  const [concentrations, setConcentrations] = useState<Record<string, number>>({});
+
+  // Recomputed only when tissue changes, not every simulation frame.
+  const simulationSteps = useMemo(() => resolveSteps(dataset, tissue), [tissue]);
 
   const selectedIsoform = selectedEnzymeSlot
     ? dataset.isoforms.find(
@@ -54,7 +61,11 @@ export default function App() {
         Tissue context:{" "}
         <select
           value={tissue}
-          onChange={(e) => setTissue(e.target.value as TissueContext)}
+          onChange={(e) => {
+            setTissue(e.target.value as TissueContext);
+            setReactionFlux({});
+            setConcentrations({});
+          }}
         >
           <option value="muscle">Muscle</option>
           <option value="liver">Liver</option>
@@ -68,6 +79,8 @@ export default function App() {
           selectedEnzymeSlot={selectedEnzymeSlot}
           selectedReactionId={selectedReactionId}
           selectedMetaboliteId={selectedMetaboliteId}
+          reactionFlux={reactionFlux}
+          concentrations={concentrations}
           onEnzymeClick={(slotId) => {
             setSelectedEnzymeSlot(slotId);
             setSelectedReactionId(null);
@@ -88,8 +101,7 @@ export default function App() {
 
       {/* Structure viewer (enzyme click), reaction panel (reaction click),
           and metabolite viewer (metabolite node or in-equation name click)
-          are all real now. Objective 4 (add glucose / flux over time) is
-          the next piece of UI to build, per docs/PROJECT_NOTES.md. */}
+          are all real. */}
       <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
         {selectedIsoform && (
           <div>
@@ -131,6 +143,8 @@ export default function App() {
           </p>
         )}
       </div>
+
+      <SimulationPanel steps={simulationSteps} onFlux={setReactionFlux} onConcentrations={setConcentrations} />
 
       <h2>Loaded data counts</h2>
       <ul>

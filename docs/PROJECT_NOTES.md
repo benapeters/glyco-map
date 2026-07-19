@@ -107,26 +107,72 @@ Core objectives:
 - `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
   renders the real `StructureViewer`, reaction click renders the real
   `ReactionPanel`, metabolite click (map node or in-equation name) renders
-  the real `MetaboliteViewer`
+  the real `MetaboliteViewer`; holds the live simulation's flux and feeds
+  it back into `PathwayMap` for edge highlighting
 - `src/components/ReactionPanel.tsx` — reaction detail panel: substrate/
   product equation (using metabolite display names, each clickable to open
   `MetaboliteViewer`), reversibility and compartment, mechanism notes,
   thermodynamics note (`deltaGNote`, when present), and a citations list
+- `src/sim/simulate.ts` — objective 4 (add glucose / flux over time):
+  resolves each enzyme slot to the active isoform for the current tissue
+  (`resolveSteps`), derives dConc/dt from reaction stoichiometry using the
+  existing `computeRate` dispatcher (1:1 per the schema's documented
+  simplification — see `derivatives`), and integrates with fixed-step RK4
+  (`rk4Step` / `advance`). RK4 rather than Euler because the near-
+  equilibrium reversible steps (e.g. PGK's `keq=3200`) are locally stiff at
+  the dt a real-time UI loop needs. `computeFlux` exposes instantaneous
+  per-reaction velocity for the map's edge highlighting without having to
+  finite-difference concentrations for it.
+- `src/components/SimulationPanel.tsx` — "Add glucose" / Play / Reset / speed
+  (0.25x-8x) controls. Runs the integrator in a `requestAnimationFrame`
+  loop; substep count scales with the model-time span of each frame
+  (target ~5ms internal RK4 step) so speeding up doesn't destabilize the
+  near-equilibrium reversible steps. Reports live concentrations and flux
+  up to `App` every time they change (not just during playback, so "Add
+  glucose"/"Reset" show up immediately even while paused) so `PathwayMap`
+  can render the fill-level visualization and edge highlighting. No chart —
+  see session 9 below for why that was replaced.
+- `src/components/PathwayMap.tsx` — gained two optional props, both
+  purely additive (map renders exactly as before when absent): `reactionFlux`
+  tints/thickens edges by relative flux; `concentrations` fills each
+  metabolite box bottom-up like a level meter (amber, distinct hue from the
+  blue flux edges), capped at an illustrative `MAX_FILL_MM` so metabolite
+  piling up faster than the next step can clear it reads as a pinned-full
+  box — itself a bottleneck signal.
 - `docs/schema.md` — design rationale for the data model
 - `docs/PROJECT_NOTES.md` — this file
 
 ## Next step
 
-Structure viewer and reaction panel are both done (see above) — still need
-to verify placeholder residue ranges and illustrative kinetic parameters
-against real sources before this is user-facing. Remaining piece before
-liver isoforms / inhibitors, per scope discipline:
-- Objective 4: "add glucose" / flux-over-time UI, using `computeRate` +
-  client-side ODE integration over the full 10-step dataset that now
-  exists. This is the last piece of the muscle-only end-to-end pipeline
-  (map -> structure viewer -> reaction panel -> simulation).
+Objective 4 (add glucose / flux-over-time) is done and has been through
+three UI iterations (see session log) — line chart, then map fill + speed
+controls, then a fix for a real bug in the flux-edge styling plus a wider
+speed range. That completes the muscle-only end-to-end pipeline (map ->
+structure viewer -> reaction panel -> simulation) called out in the
+scope-discipline decision.
+
+Not yet checked in a real browser (sandboxed build environment — `tsc -b`
+and `vite build` are clean, but the animation loop, RK4 stability at real
+frame rates up to 32x, and whether the flux color-key and fill-level
+visualization actually feel good on iPad haven't been eyeballed live).
+Check that first with `npm run dev` before trusting it end-to-end, same
+pattern as the structure viewer in session 5.
+
+Remaining before liver isoforms / inhibitors, per scope discipline:
+- Verify placeholder residue ranges (structure viewer) and illustrative
+  kinetic parameters against real sources — flagged since session 3/4,
+  still not done. Worth noting while doing that pass: PFK-1 is
+  substantially pre-inhibited at the current resting-state ATP/AMP
+  defaults (ATP=2.5mM vs. its own Ki=1.5mM), which is part of why the
+  simulation reads as slow at 1x — physiologically plausible, but worth
+  double-checking against real resting-muscle values rather than assuming
+  it's simply a units/scale problem.
+- `MAX_FILL_MM` (the concentration that reads as a "full" box) is a guessed
+  constant, not derived from the isoform Km values — worth revisiting once
+  the kinetic parameters above are verified, since realistic Km/vMax values
+  might make some boxes always-full or always-empty at the current scale.
 - Still deferred, per scope discipline: liver isoforms for steps other than
-  HK, inhibitors, genetic variants
+  HK, inhibitors, genetic variants.
 
 ## Session log
 
@@ -190,3 +236,52 @@ liver isoforms / inhibitors, per scope discipline:
   several metabolites quickly). Both confirmed working in a real browser by
   Ben: metabolite structures load, and the wider edges are much easier to
   click.
+- Session 8: built objective 4 (add glucose / flux-over-time), the last
+  piece of the muscle-only end-to-end pipeline. `src/sim/simulate.ts`
+  resolves each enzyme slot to its tissue-appropriate isoform and
+  integrates the 10-reaction system with fixed-step RK4 over the existing
+  `computeRate` dispatcher — RK4 over Euler because near-equilibrium steps
+  (PGK's `keq=3200`) are locally stiff at real-time-UI step sizes. Built
+  `SimulationPanel.tsx` (add-glucose / play / reset, `requestAnimationFrame`
+  loop, 20s rolling chart at 5 Hz) and `ConcentrationChart.tsx` (plain SVG,
+  `d3.scaleLinear` for axes only). Gave `PathwayMap.tsx` an optional
+  `reactionFlux` prop so active edges highlight during simulation, without
+  changing its behavior when the prop is absent. Verified `tsc -b` and
+  `vite build` clean. Not yet run in a real browser — the animation loop,
+  numerical stability at real frame rates, and whether the flux
+  highlighting reads well haven't been eyeballed live; check with
+  `npm run dev` before trusting it end-to-end (same caveat as new UI in
+  sessions 5 and 7).
+- Session 9: reworked the objective-4 UI after Ben tried session 8's build —
+  the line chart felt visually flat and a separate third panel is a poor
+  fit on iPad. Removed `ConcentrationChart.tsx` and the chart entirely.
+  Instead, `PathwayMap.tsx`'s existing metabolite boxes now double as the
+  visualization: each fills bottom-up with color proportional to
+  concentration (capped at an illustrative `MAX_FILL_MM`, so a metabolite
+  backing up faster than the next step clears it reads as a pinned-full
+  box — an immediate bottleneck signal, sitting right on the map instead of
+  in separate readouts). Also added speed controls (0.25x-8x) to
+  `SimulationPanel.tsx`; substep count now scales with each frame's
+  model-time span (target ~5ms internal RK4 step) rather than being fixed,
+  so higher speeds don't destabilize the near-equilibrium reversible steps.
+  Verified `tsc -b` and `vite build` clean. Not yet checked in a real
+  browser — same caveat as session 8, now compounded by the higher-speed
+  numerical stability question above.
+- Session 10: fixed a real bug Ben hit — hitting Play then adding glucose
+  made the aldolase edges disappear temporarily. Root cause: aldolase's
+  rate law has a tiny `keq` (0.0001, physiologically realistic — aldolase
+  favors substrate at standard state, only pulled forward in vivo by rapid
+  downstream consumption), so `computeRate` legitimately returns a
+  negative velocity once enough G3P/DHAP has built up (net reverse flux).
+  The flux-ratio math for edge width/opacity wasn't guarding against
+  negative flux, so it briefly went to near-zero width/opacity —
+  invisible, not actually broken. Per Ben's ask, replaced the width+opacity
+  scheme entirely: edges are now a constant width, colored on a fixed
+  low->high gradient by `Math.abs(flux)` (direction isn't shown, only
+  magnitude — the arrow always points the documented forward direction),
+  which structurally can't collapse to invisible. Added a small color-key
+  in the map's top-right corner. Also widened the speed range — 1x read as
+  sluggish given the illustrative vMax values and real product/allosteric
+  inhibition baked into the rate laws (see PFK-1 note above); default is
+  now 4x (was the most-used setting), ceiling raised to 32x. Verified
+  `tsc -b` and `vite build` clean. Not yet checked in a real browser.

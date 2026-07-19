@@ -73,6 +73,58 @@ export interface PathwayMapProps {
   onEnzymeClick?: (enzymeSlotId: string) => void;
   onReactionClick?: (reactionId: string) => void;
   onMetaboliteClick?: (metaboliteId: string) => void;
+  /**
+   * Instantaneous velocity (mM/s) per reaction id, from the simulation
+   * (see `src/sim/simulate.ts`). Optional and purely additive — when
+   * present, edges are tinted/thickened by relative flux; when absent the
+   * map renders exactly as it did before flux existed.
+   */
+  reactionFlux?: Record<string, number>;
+  /**
+   * Concentrations (mM) by metabolite id, from the simulation. Optional and
+   * purely additive, same pattern as `reactionFlux` — when present,
+   * metabolite boxes fill bottom-up with color proportional to
+   * concentration (a "level meter" — pooling metabolite in front of a slow
+   * step is an immediate visual for a bottleneck); when absent the boxes
+   * render exactly as they did before concentration existed.
+   */
+  concentrations?: Record<string, number>;
+}
+
+const FLUX_IDLE_COLOR = "#94a3b8"; // matches the original unhighlighted edge color
+const FLUX_ACTIVE_COLOR = "#0369a1"; // deep blue at max flux
+/**
+ * Fill color for the metabolite "level meter", deliberately a different
+ * hue from the flux gradient above — blue edges read as "rate happening
+ * now", amber boxes read as "amount currently held", and conflating the
+ * two colors would blur that distinction.
+ */
+const FILL_COLOR = "#f59e0b";
+/**
+ * Concentration (mM) that reads as a "full" box. Illustrative, not derived
+ * from the isoform Km values — same "flagged, not yet verified" status as
+ * the rest of the illustrative kinetic parameters (see docs/schema.md).
+ * Concentrations above this just render full rather than overflow the box,
+ * which is itself a useful signal (metabolite piling up faster than the
+ * next step can clear it).
+ */
+const MAX_FILL_MM = 3;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  const toHex = (v: number) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/** Linear interpolation between two hex colors, t in [0, 1]. */
+function lerpColor(from: string, to: string, t: number): string {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  return rgbToHex([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
 }
 
 export default function PathwayMap({
@@ -84,7 +136,17 @@ export default function PathwayMap({
   onEnzymeClick,
   onReactionClick,
   onMetaboliteClick,
+  reactionFlux,
+  concentrations,
 }: PathwayMapProps) {
+  // Reversible steps (e.g. aldolase, with its tiny keq) can legitimately run
+  // net-backward — computeRate returns a negative velocity in that case.
+  // Normalizing by absolute value keeps the color scale meaningful either
+  // way; direction isn't shown (the arrow always points the documented
+  // forward direction), only magnitude of net flux.
+  const maxFlux = reactionFlux
+    ? Math.max(0.001, ...Object.values(reactionFlux).map((v) => Math.abs(v)))
+    : 0;
   const metaboliteById = new Map(dataset.metabolites.map((m) => [m.id, m]));
   const reactionById = new Map(dataset.reactions.map((r) => [r.id, r]));
 
@@ -94,12 +156,44 @@ export default function PathwayMap({
     );
 
   return (
-    <svg
-      viewBox={VIEWBOX}
-      role="img"
-      aria-label="Glycolysis pathway map"
-      style={{ width: "100%", height: "auto", fontFamily: "sans-serif" }}
-    >
+    <div style={{ position: "relative" }}>
+      {reactionFlux && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            fontFamily: "sans-serif",
+            fontSize: 11,
+            color: "#64748b",
+            gap: 2,
+          }}
+        >
+          <span>Reaction flux</span>
+          <div
+            style={{
+              width: 100,
+              height: 8,
+              borderRadius: 4,
+              border: "1px solid #cbd5e1",
+              background: `linear-gradient(to right, ${FLUX_IDLE_COLOR}, ${FLUX_ACTIVE_COLOR})`,
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", width: 100 }}>
+            <span>low</span>
+            <span>high</span>
+          </div>
+        </div>
+      )}
+      <svg
+        viewBox={VIEWBOX}
+        role="img"
+        aria-label="Glycolysis pathway map"
+        style={{ width: "100%", height: "auto", fontFamily: "sans-serif" }}
+      >
       {/* Edges (reactions) drawn first so nodes sit on top */}
       {dataset.enzymeSlots.map((slot) => {
         const edges = MAIN_CHAIN_EDGES[slot.reactionId];
@@ -137,16 +231,28 @@ export default function PathwayMap({
                       {reaction.name}: {reaction.equation}
                     </title>
                   </line>
-                  <line
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={isSelected ? "#1d4ed8" : "#94a3b8"}
-                    strokeWidth={isSelected ? 4 : 2.5}
-                    markerEnd="url(#arrowhead)"
-                    pointerEvents="none"
-                  />
+                  {(() => {
+                    const flux = reactionFlux?.[reaction.id] ?? 0;
+                    // Always non-negative, regardless of reaction direction.
+                    const fluxRatio = reactionFlux ? Math.min(1, Math.abs(flux) / maxFlux) : 0;
+                    const stroke = isSelected
+                      ? "#1d4ed8"
+                      : reactionFlux
+                        ? lerpColor(FLUX_IDLE_COLOR, FLUX_ACTIVE_COLOR, fluxRatio)
+                        : "#94a3b8";
+                    return (
+                      <line
+                        x1={from.x}
+                        y1={from.y}
+                        x2={to.x}
+                        y2={to.y}
+                        stroke={stroke}
+                        strokeWidth={isSelected ? 4 : 2.5}
+                        markerEnd="url(#arrowhead)"
+                        pointerEvents="none"
+                      />
+                    );
+                  })()}
                 </g>
               );
             })}
@@ -214,23 +320,61 @@ export default function PathwayMap({
         const metabolite = metaboliteById.get(id);
         if (!metabolite) return null;
         const isSelected = selectedMetaboliteId === id;
+        const conc = concentrations?.[id] ?? 0;
+        const fillRatio = concentrations ? Math.min(1, conc / MAX_FILL_MM) : 0;
+        const fillHeight = fillRatio * NODE_RY * 2;
+        const clipId = `fill-clip-${id}`;
+        const boxLeft = pos.x - NODE_RX;
+        const boxTop = pos.y - NODE_RY;
+
         return (
           <g
             key={`metabolite-${id}`}
             onClick={() => onMetaboliteClick?.(id)}
             style={{ cursor: onMetaboliteClick ? "pointer" : "default" }}
           >
+            {concentrations && (
+              <clipPath id={clipId}>
+                <rect x={boxLeft} y={boxTop} width={NODE_RX * 2} height={NODE_RY * 2} rx={10} />
+              </clipPath>
+            )}
+            {/* Base/background, drawn first so the fill (if any) shows on
+                top of it and the border (drawn last) sits cleanly over both. */}
             <rect
-              x={pos.x - NODE_RX}
-              y={pos.y - NODE_RY}
+              x={boxLeft}
+              y={boxTop}
               width={NODE_RX * 2}
               height={NODE_RY * 2}
               rx={10}
               fill={isSelected ? "#1d4ed8" : "#ffffff"}
+            />
+            {concentrations && !isSelected && fillRatio > 0 && (
+              <rect
+                x={boxLeft}
+                y={pos.y + NODE_RY - fillHeight}
+                width={NODE_RX * 2}
+                height={fillHeight}
+                fill={FILL_COLOR}
+                opacity={0.55}
+                clipPath={`url(#${clipId})`}
+                pointerEvents="none"
+              />
+            )}
+            <rect
+              x={boxLeft}
+              y={boxTop}
+              width={NODE_RX * 2}
+              height={NODE_RY * 2}
+              rx={10}
+              fill="none"
               stroke={isSelected ? "#1d4ed8" : "#334155"}
               strokeWidth={1.5}
+              pointerEvents="none"
             >
-              <title>{metabolite.name}</title>
+              <title>
+                {metabolite.name}
+                {concentrations ? ` — ${conc.toFixed(3)} mM` : ""}
+              </title>
             </rect>
             <text
               x={pos.x}
@@ -245,6 +389,7 @@ export default function PathwayMap({
           </g>
         );
       })}
-    </svg>
+      </svg>
+    </div>
   );
 }

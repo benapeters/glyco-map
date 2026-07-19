@@ -1,0 +1,13 @@
+diff --git a/package.json b/package.json
+index da881c3..1523999 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "glyco-map",
+   "private": true,
+-  "version": "0.3.0",
++  "version": "0.4.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
