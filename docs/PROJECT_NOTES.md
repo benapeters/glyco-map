@@ -78,29 +78,40 @@ Core objectives:
 ## What exists in the repo right now
 
 - `src/types/schema.ts` — full data model (see above)
-- `src/data/glycolysis/` — full glycolysis pathway: 18 metabolites/cofactors,
-  all 10 reactions (glucose -> pyruvate), 11 muscle isoforms + 1 liver
-  isoform (`GCK_liver`, HK step only — other steps stay muscle-only per
-  scope discipline)
+- `src/data/glycolysis/` — full glycolysis pathway: 18 metabolites/cofactors
+  (each with a hand-verified `pubchemCid` for structure viewing), all 10
+  reactions (glucose -> pyruvate), 11 muscle isoforms + 1 liver isoform
+  (`GCK_liver`, HK step only — other steps stay muscle-only per scope
+  discipline)
 - `src/sim/rateLaws.ts` — rate law dispatcher, all 3 types + effectors
 - `src/components/PathwayMap.tsx` — real SVG pathway map: renders all 10
   reaction steps as a static node-and-edge layout (hand-placed lattice
   coordinates, not D3 yet), correctly shows the aldolase branch / TPI merge.
-  Enzyme nodes and reaction edges are clickable via `onEnzymeClick` /
-  `onReactionClick` props.
+  Enzyme nodes, reaction edges, and main-chain metabolite nodes are all
+  clickable via `onEnzymeClick` / `onReactionClick` / `onMetaboliteClick`
+  props. Reaction edges have a wide invisible `pointer-events: stroke` hit
+  target layered under the thin visible line — clicking the actual 2.5px
+  line was a real usability problem, fixed in session 7.
 - `src/components/StructureViewer.tsx` — real structure viewer using NGL:
   loads the selected isoform's `structure.pdbId` from RCSB, draws a cartoon
   with each `structure.annotations` residue range highlighted by `kind`
   (color-coded), a legend/list below the viewer, and click-to-focus on an
   annotation. Residue ranges are still the placeholder values noted above —
   not yet verified against real PDB numbering.
+- `src/components/MetaboliteViewer.tsx` — small-molecule counterpart to
+  StructureViewer: loads a 3D structure from PubChem by `pubchemCid` (2D
+  fallback for a few ionic species with no 3D conformer) and renders it
+  with NGL. Main-chain metabolites are clickable on the map; cofactors
+  (ATP, NADH, etc., not drawn as map nodes) are clickable by name inside
+  the reaction equation in `ReactionPanel`.
 - `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
   renders the real `StructureViewer`, reaction click renders the real
-  `ReactionPanel`
+  `ReactionPanel`, metabolite click (map node or in-equation name) renders
+  the real `MetaboliteViewer`
 - `src/components/ReactionPanel.tsx` — reaction detail panel: substrate/
-  product equation (using metabolite display names), reversibility and
-  compartment, mechanism notes, thermodynamics note (`deltaGNote`, when
-  present), and a citations list
+  product equation (using metabolite display names, each clickable to open
+  `MetaboliteViewer`), reversibility and compartment, mechanism notes,
+  thermodynamics note (`deltaGNote`, when present), and a citations list
 - `docs/schema.md` — design rationale for the data model
 - `docs/PROJECT_NOTES.md` — this file
 
@@ -170,10 +181,12 @@ liver isoforms / inhibitors, per scope discipline:
   Main-chain metabolite map nodes are now clickable; cofactors (ATP, NADH,
   etc., not drawn as map nodes) are viewable by clicking their name inside
   the reaction equation in `ReactionPanel`. Verified `tsc -b`/`vite build`
-  clean. Two things NOT yet verified in a real browser (sandbox can't
-  reach rcsb.org or pubchem.ncbi.nlm.nih.gov): the wider click target
-  actually feels right, and PubChem's PUG REST allows the cross-origin
-  fetch NGL needs (widely used for client-side SDF fetches, but not
-  something I could confirm directly — also worth knowing PubChem asks for
-  no more than 5 requests/sec, relevant if someone clicks through several
-  metabolites quickly).
+  clean. Two things I couldn't check from the sandbox (no access to
+  rcsb.org or pubchem.ncbi.nlm.nih.gov): whether the wider click target
+  actually feels right, and whether PubChem's PUG REST allows the
+  cross-origin fetch NGL needs (widely used for client-side SDF fetches,
+  but not something I could confirm directly — also worth knowing PubChem
+  asks for no more than 5 requests/sec, relevant if someone clicks through
+  several metabolites quickly). Both confirmed working in a real browser by
+  Ben: metabolite structures load, and the wider edges are much easier to
+  click.
