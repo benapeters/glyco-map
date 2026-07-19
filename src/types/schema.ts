@@ -26,6 +26,16 @@ export interface Metabolite {
   name: string;
   formula?: string;
   compartment: Compartment;
+  /**
+   * PubChem Compound ID for the free/unbound small molecule. Used to load a
+   * 3D structure via NGL (see StructureViewer/MetaboliteViewer) — distinct
+   * from `structure.pdbId` on enzyme isoforms, which points to a protein
+   * structure. Verified by hand against Wikipedia/PubChem infoboxes at
+   * data-entry time (see docs/PROJECT_NOTES.md) rather than looked up
+   * programmatically, so worth a spot-check if a rendered structure looks
+   * wrong for a given metabolite.
+   */
+  pubchemCid?: number;
 }
 
 /** A stable position in the pathway topology, independent of which isoform fills it. */

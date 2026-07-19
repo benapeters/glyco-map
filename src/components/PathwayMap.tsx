@@ -69,8 +69,10 @@ export interface PathwayMapProps {
   tissue: TissueContext;
   selectedEnzymeSlot?: string | null;
   selectedReactionId?: string | null;
+  selectedMetaboliteId?: string | null;
   onEnzymeClick?: (enzymeSlotId: string) => void;
   onReactionClick?: (reactionId: string) => void;
+  onMetaboliteClick?: (metaboliteId: string) => void;
 }
 
 export default function PathwayMap({
@@ -78,8 +80,10 @@ export default function PathwayMap({
   tissue,
   selectedEnzymeSlot,
   selectedReactionId,
+  selectedMetaboliteId,
   onEnzymeClick,
   onReactionClick,
+  onMetaboliteClick,
 }: PathwayMapProps) {
   const metaboliteById = new Map(dataset.metabolites.map((m) => [m.id, m]));
   const reactionById = new Map(dataset.reactions.map((r) => [r.id, r]));
@@ -110,22 +114,40 @@ export default function PathwayMap({
               const to = METABOLITE_POSITIONS[toId];
               if (!from || !to) return null;
               return (
-                <line
-                  key={`${slot.id}-edge-${i}`}
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={isSelected ? "#1d4ed8" : "#94a3b8"}
-                  strokeWidth={isSelected ? 4 : 2.5}
-                  markerEnd="url(#arrowhead)"
-                  style={{ cursor: onReactionClick ? "pointer" : "default" }}
-                  onClick={() => onReactionClick?.(reaction.id)}
-                >
-                  <title>
-                    {reaction.name}: {reaction.equation}
-                  </title>
-                </line>
+                <g key={`${slot.id}-edge-${i}`}>
+                  {/* Wide, invisible hit target — the visible line below is
+                      only 2.5-4px wide, which is a frustratingly small
+                      click/tap target on its own. `pointer-events: stroke`
+                      makes this line's full stroke width clickable even
+                      though it isn't painted. */}
+                  <line
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke="transparent"
+                    strokeWidth={24}
+                    style={{
+                      cursor: onReactionClick ? "pointer" : "default",
+                      pointerEvents: "stroke",
+                    }}
+                    onClick={() => onReactionClick?.(reaction.id)}
+                  >
+                    <title>
+                      {reaction.name}: {reaction.equation}
+                    </title>
+                  </line>
+                  <line
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke={isSelected ? "#1d4ed8" : "#94a3b8"}
+                    strokeWidth={isSelected ? 4 : 2.5}
+                    markerEnd="url(#arrowhead)"
+                    pointerEvents="none"
+                  />
+                </g>
               );
             })}
           </g>
@@ -191,16 +213,21 @@ export default function PathwayMap({
       {Object.entries(METABOLITE_POSITIONS).map(([id, pos]) => {
         const metabolite = metaboliteById.get(id);
         if (!metabolite) return null;
+        const isSelected = selectedMetaboliteId === id;
         return (
-          <g key={`metabolite-${id}`}>
+          <g
+            key={`metabolite-${id}`}
+            onClick={() => onMetaboliteClick?.(id)}
+            style={{ cursor: onMetaboliteClick ? "pointer" : "default" }}
+          >
             <rect
               x={pos.x - NODE_RX}
               y={pos.y - NODE_RY}
               width={NODE_RX * 2}
               height={NODE_RY * 2}
               rx={10}
-              fill="#ffffff"
-              stroke="#334155"
+              fill={isSelected ? "#1d4ed8" : "#ffffff"}
+              stroke={isSelected ? "#1d4ed8" : "#334155"}
               strokeWidth={1.5}
             >
               <title>{metabolite.name}</title>
@@ -210,7 +237,7 @@ export default function PathwayMap({
               y={pos.y + 4}
               textAnchor="middle"
               fontSize={12}
-              fill="#0f172a"
+              fill={isSelected ? "#f8fafc" : "#0f172a"}
               pointerEvents="none"
             >
               {metabolite.name.length > 14 ? `${metabolite.id}` : metabolite.name}

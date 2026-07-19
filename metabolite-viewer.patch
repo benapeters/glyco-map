@@ -1,0 +1,784 @@
+diff --git a/docs/PROJECT_NOTES.md b/docs/PROJECT_NOTES.md
+index 14c712e..9819f08 100644
+--- a/docs/PROJECT_NOTES.md
++++ b/docs/PROJECT_NOTES.md
+@@ -95,22 +95,25 @@ Core objectives:
+   annotation. Residue ranges are still the placeholder values noted above —
+   not yet verified against real PDB numbering.
+ - `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
+-  now renders the real `StructureViewer` (not yet the real reaction panel,
+-  which still shows plain text)
++  renders the real `StructureViewer`, reaction click renders the real
++  `ReactionPanel`
++- `src/components/ReactionPanel.tsx` — reaction detail panel: substrate/
++  product equation (using metabolite display names), reversibility and
++  compartment, mechanism notes, thermodynamics note (`deltaGNote`, when
++  present), and a citations list
+ - `docs/schema.md` — design rationale for the data model
+ - `docs/PROJECT_NOTES.md` — this file
+ 
+ ## Next step
+ 
+-Structure viewer is done (see above) — still need to verify placeholder
+-residue ranges against real PDB numbering before this is user-facing.
+-Remaining UI piece:
+-- Reaction panel: on reaction edge click, show the full equation,
+-  `mechanismNotes`, `deltaGNote`, and citations in a proper panel (not the
+-  current one-line text dump)
+-- Once both panels exist: wire the "add glucose" / flux-through-time
+-  objective (objective 4) using `computeRate` + client-side ODE integration
+-  over the full 10-step dataset that now exists
++Structure viewer and reaction panel are both done (see above) — still need
++to verify placeholder residue ranges and illustrative kinetic parameters
++against real sources before this is user-facing. Remaining piece before
++liver isoforms / inhibitors, per scope discipline:
++- Objective 4: "add glucose" / flux-over-time UI, using `computeRate` +
++  client-side ODE integration over the full 10-step dataset that now
++  exists. This is the last piece of the muscle-only end-to-end pipeline
++  (map -> structure viewer -> reaction panel -> simulation).
+ - Still deferred, per scope discipline: liver isoforms for steps other than
+   HK, inhibitors, genetic variants
+ 
+@@ -143,3 +146,34 @@ Remaining UI piece:
+   Not yet verified in a real browser against a live RCSB fetch (sandboxed
+   build environment couldn't reach rcsb.org) — check this first with
+   `npm run dev` locally before trusting it end-to-end.
++- Session 6: verified the NGL structure viewer works against live RCSB
++  fetches in a real browser (confirmed by Ben, not just build-checked).
++  Committed and tagged that work as v0.2.0. Built `ReactionPanel.tsx` and
++  wired it into `App.tsx`, replacing the one-line reaction text dump —
++  shows the substrate/product equation with real metabolite names,
++  reversibility/compartment, mechanism notes, thermodynamics note, and
++  citations. Verified `tsc -b`/`vite build` clean. Not yet checked in a
++  real browser.
++- Session 7 (in progress): fixed a real usability bug — reaction edges were
++  only clickable on their 2.5px visible stroke. Added an invisible 24px-wide
++  `pointer-events: stroke` hit-target line alongside each visible edge in
++  `PathwayMap.tsx`; the visible line itself is now `pointer-events: none`.
++  Also added `MetaboliteViewer.tsx` — a small-molecule counterpart to
++  StructureViewer. Metabolites aren't proteins, so there's no PDB entry;
++  instead it pulls a 3D SDF conformer from PubChem by CID
++  (`rest/pug/compound/cid/<cid>/record/SDF/?record_type=3d`, falling back
++  to `record_type=2d` for a few highly ionic species like bare phosphate
++  that lack a 3D conformer) and hands it to the same NGL Stage machinery.
++  Added `pubchemCid` to the `Metabolite` schema and hand-verified CIDs for
++  all 18 metabolites against Wikipedia/PubChem infoboxes (not looked up
++  programmatically — spot-check if a rendered structure looks wrong).
++  Main-chain metabolite map nodes are now clickable; cofactors (ATP, NADH,
++  etc., not drawn as map nodes) are viewable by clicking their name inside
++  the reaction equation in `ReactionPanel`. Verified `tsc -b`/`vite build`
++  clean. Two things NOT yet verified in a real browser (sandbox can't
++  reach rcsb.org or pubchem.ncbi.nlm.nih.gov): the wider click target
++  actually feels right, and PubChem's PUG REST allows the cross-origin
++  fetch NGL needs (widely used for client-side SDF fetches, but not
++  something I could confirm directly — also worth knowing PubChem asks for
++  no more than 5 requests/sec, relevant if someone clicks through several
++  metabolites quickly).
+diff --git a/src/App.tsx b/src/App.tsx
+index e75f80f..13943ee 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -4,6 +4,8 @@ import reactions from "./data/glycolysis/reactions.json";
+ import enzymeData from "./data/glycolysis/enzymes.json";
+ import PathwayMap from "./components/PathwayMap";
+ import StructureViewer from "./components/StructureViewer";
++import ReactionPanel from "./components/ReactionPanel";
++import MetaboliteViewer from "./components/MetaboliteViewer";
+ import type {
+   EnzymeIsoform,
+   EnzymeSlot,
+@@ -27,6 +29,7 @@ export default function App() {
+   const [tissue, setTissue] = useState<TissueContext>("muscle");
+   const [selectedEnzymeSlot, setSelectedEnzymeSlot] = useState<string | null>(null);
+   const [selectedReactionId, setSelectedReactionId] = useState<string | null>(null);
++  const [selectedMetaboliteId, setSelectedMetaboliteId] = useState<string | null>(null);
+ 
+   const selectedIsoform = selectedEnzymeSlot
+     ? dataset.isoforms.find(
+@@ -38,6 +41,11 @@ export default function App() {
+     ? dataset.reactions.find((r) => r.id === selectedReactionId)
+     : undefined;
+ 
++  const metaboliteById = new Map(dataset.metabolites.map((m) => [m.id, m]));
++  const selectedMetabolite = selectedMetaboliteId
++    ? metaboliteById.get(selectedMetaboliteId)
++    : undefined;
++
+   return (
+     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1100 }}>
+       <h1>Glycolysis map</h1>
+@@ -59,20 +67,29 @@ export default function App() {
+           tissue={tissue}
+           selectedEnzymeSlot={selectedEnzymeSlot}
+           selectedReactionId={selectedReactionId}
++          selectedMetaboliteId={selectedMetaboliteId}
+           onEnzymeClick={(slotId) => {
+             setSelectedEnzymeSlot(slotId);
+             setSelectedReactionId(null);
++            setSelectedMetaboliteId(null);
+           }}
+           onReactionClick={(reactionId) => {
+             setSelectedReactionId(reactionId);
+             setSelectedEnzymeSlot(null);
++            setSelectedMetaboliteId(null);
++          }}
++          onMetaboliteClick={(metaboliteId) => {
++            setSelectedMetaboliteId(metaboliteId);
++            setSelectedEnzymeSlot(null);
++            setSelectedReactionId(null);
+           }}
+         />
+       </div>
+ 
+-      {/* Structure viewer (enzyme click) is now real (NGL). Reaction/mechanism
+-          panel (reaction click) is still the next piece of UI to build on
+-          top of this, per docs/PROJECT_NOTES.md. */}
++      {/* Structure viewer (enzyme click), reaction panel (reaction click),
++          and metabolite viewer (metabolite node or in-equation name click)
++          are all real now. Objective 4 (add glucose / flux over time) is
++          the next piece of UI to build, per docs/PROJECT_NOTES.md. */}
+       <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
+         {selectedIsoform && (
+           <div>
+@@ -86,15 +103,31 @@ export default function App() {
+           </div>
+         )}
+         {selectedReaction && (
+-          <div>
+-            <h2>{selectedReaction.name}</h2>
+-            <p>{selectedReaction.equation}</p>
+-            <p>{selectedReaction.mechanismNotes}</p>
++          <ReactionPanel
++            reaction={selectedReaction}
++            metaboliteById={metaboliteById}
++            selectedMetaboliteId={selectedMetaboliteId}
++            onMetaboliteClick={setSelectedMetaboliteId}
++          />
++        )}
++        {/* Shown whenever a metabolite is selected, whether that came from
++            clicking a map node (which clears enzyme/reaction selection
++            above) or clicking a name inside the reaction equation (which
++            doesn't — so this renders alongside the reaction panel). */}
++        {selectedMetabolite && !selectedIsoform && (
++          <div style={{ marginTop: selectedReaction ? "1rem" : 0 }}>
++            <h2>{selectedMetabolite.name}</h2>
++            <p>
++              Formula: {selectedMetabolite.formula ?? "—"} · Compartment:{" "}
++              {selectedMetabolite.compartment}
++            </p>
++            <MetaboliteViewer metabolite={selectedMetabolite} />
+           </div>
+         )}
+-        {!selectedIsoform && !selectedReaction && (
++        {!selectedIsoform && !selectedReaction && !selectedMetabolite && (
+           <p style={{ color: "#64748b" }}>
+-            Click an enzyme node (circle) or a reaction edge (arrow) above for details.
++            Click an enzyme node (circle), a reaction edge (arrow), or a
++            metabolite box above for details.
+           </p>
+         )}
+       </div>
+diff --git a/src/components/MetaboliteViewer.tsx b/src/components/MetaboliteViewer.tsx
+new file mode 100644
+index 0000000..8428c1b
+--- /dev/null
++++ b/src/components/MetaboliteViewer.tsx
+@@ -0,0 +1,170 @@
++import { useEffect, useRef, useState } from "react";
++import type { Stage as NglStage } from "ngl";
++import type { Metabolite } from "../types/schema";
++
++export interface MetaboliteViewerProps {
++  metabolite: Metabolite;
++}
++
++type LoadState = "loading" | "ready" | "error";
++
++/**
++ * Small-molecule counterpart to StructureViewer. Metabolites aren't proteins
++ * — there's no PDB entry to load — so instead of RCSB we pull a 3D SDF
++ * conformer from PubChem by CID and hand it to the same NGL Stage machinery.
++ * PubChem falls back to a 2D-only depiction for a handful of highly ionic
++ * species (e.g. bare phosphate) that don't have a meaningful 3D conformer;
++ * we retry with `record_type=2d` if the 3D request fails.
++ */
++export default function MetaboliteViewer({ metabolite }: MetaboliteViewerProps) {
++  const containerRef = useRef<HTMLDivElement>(null);
++  const stageRef = useRef<NglStage | null>(null);
++  const [loadState, setLoadState] = useState<LoadState>("loading");
++  const [errorMessage, setErrorMessage] = useState<string>("");
++  const [usedFallback2d, setUsedFallback2d] = useState(false);
++
++  useEffect(() => {
++    if (!containerRef.current) return;
++    let cancelled = false;
++
++    import("ngl").then(({ Stage }) => {
++      if (cancelled || !containerRef.current) return;
++      const stage = new Stage(containerRef.current, {
++        backgroundColor: "#f8fafc",
++      });
++      stageRef.current = stage;
++    });
++
++    const handleResize = () => stageRef.current?.handleResize();
++    window.addEventListener("resize", handleResize);
++
++    return () => {
++      cancelled = true;
++      window.removeEventListener("resize", handleResize);
++      stageRef.current?.dispose();
++      stageRef.current = null;
++    };
++  }, []);
++
++  useEffect(() => {
++    let cancelled = false;
++    setLoadState("loading");
++    setErrorMessage("");
++    setUsedFallback2d(false);
++
++    const load = async () => {
++      let attempts = 0;
++      while (!stageRef.current && attempts < 50 && !cancelled) {
++        await new Promise((resolve) => setTimeout(resolve, 20));
++        attempts += 1;
++      }
++      const stage = stageRef.current;
++      if (!stage || cancelled) return;
++
++      stage.removeAllComponents();
++
++      if (!metabolite.pubchemCid) {
++        setErrorMessage("No PubChem CID on record for this metabolite");
++        setLoadState("error");
++        return;
++      }
++
++      const urlFor = (recordType: "3d" | "2d") =>
++        `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${metabolite.pubchemCid}/record/SDF/?record_type=${recordType}`;
++
++      const tryLoad = async (recordType: "3d" | "2d") => {
++        const component = await stage.loadFile(urlFor(recordType), {
++          ext: "sdf",
++          defaultRepresentation: false,
++        });
++        return component;
++      };
++
++      try {
++        let component;
++        try {
++          component = await tryLoad("3d");
++        } catch {
++          component = await tryLoad("2d");
++          if (!cancelled) setUsedFallback2d(true);
++        }
++
++        if (cancelled || !component) return;
++
++        component.addRepresentation("ball+stick", {
++          multipleBond: true,
++        });
++        component.autoView(0);
++        if (!cancelled) setLoadState("ready");
++      } catch (err) {
++        if (!cancelled) {
++          setErrorMessage(
++            err instanceof Error ? err.message : "Failed to load structure"
++          );
++          setLoadState("error");
++        }
++      }
++    };
++
++    load();
++
++    return () => {
++      cancelled = true;
++    };
++  }, [metabolite]);
++
++  return (
++    <div>
++      <div
++        ref={containerRef}
++        style={{
++          width: "100%",
++          height: 280,
++          borderRadius: 8,
++          border: "1px solid #cbd5e1",
++          position: "relative",
++          background: "#f8fafc",
++        }}
++      >
++        {loadState === "loading" && (
++          <div style={overlayStyle}>Loading {metabolite.name}…</div>
++        )}
++        {loadState === "error" && (
++          <div style={{ ...overlayStyle, color: "#dc2626" }}>
++            Couldn't load structure for {metabolite.name}
++            {errorMessage ? `: ${errorMessage}` : ""}
++          </div>
++        )}
++      </div>
++      {usedFallback2d && loadState === "ready" && (
++        <p style={{ color: "#64748b", fontSize: "0.8em", marginTop: "0.4rem" }}>
++          PubChem has no 3D conformer for this ion — showing the 2D depiction
++          instead.
++        </p>
++      )}
++      <p style={{ color: "#64748b", fontSize: "0.85em", marginTop: "0.4rem" }}>
++        Source:{" "}
++        <a
++          href={`https://pubchem.ncbi.nlm.nih.gov/compound/${metabolite.pubchemCid}`}
++          target="_blank"
++          rel="noreferrer"
++        >
++          PubChem CID {metabolite.pubchemCid}
++        </a>
++      </p>
++    </div>
++  );
++}
++
++const overlayStyle: React.CSSProperties = {
++  position: "absolute",
++  inset: 0,
++  display: "flex",
++  alignItems: "center",
++  justifyContent: "center",
++  color: "#64748b",
++  fontSize: "0.9rem",
++  pointerEvents: "none",
++  textAlign: "center",
++  padding: "0 1rem",
++};
+diff --git a/src/components/PathwayMap.tsx b/src/components/PathwayMap.tsx
+index 5215022..4b4e1e8 100644
+--- a/src/components/PathwayMap.tsx
++++ b/src/components/PathwayMap.tsx
+@@ -69,8 +69,10 @@ export interface PathwayMapProps {
+   tissue: TissueContext;
+   selectedEnzymeSlot?: string | null;
+   selectedReactionId?: string | null;
++  selectedMetaboliteId?: string | null;
+   onEnzymeClick?: (enzymeSlotId: string) => void;
+   onReactionClick?: (reactionId: string) => void;
++  onMetaboliteClick?: (metaboliteId: string) => void;
+ }
+ 
+ export default function PathwayMap({
+@@ -78,8 +80,10 @@ export default function PathwayMap({
+   tissue,
+   selectedEnzymeSlot,
+   selectedReactionId,
++  selectedMetaboliteId,
+   onEnzymeClick,
+   onReactionClick,
++  onMetaboliteClick,
+ }: PathwayMapProps) {
+   const metaboliteById = new Map(dataset.metabolites.map((m) => [m.id, m]));
+   const reactionById = new Map(dataset.reactions.map((r) => [r.id, r]));
+@@ -110,22 +114,40 @@ export default function PathwayMap({
+               const to = METABOLITE_POSITIONS[toId];
+               if (!from || !to) return null;
+               return (
+-                <line
+-                  key={`${slot.id}-edge-${i}`}
+-                  x1={from.x}
+-                  y1={from.y}
+-                  x2={to.x}
+-                  y2={to.y}
+-                  stroke={isSelected ? "#1d4ed8" : "#94a3b8"}
+-                  strokeWidth={isSelected ? 4 : 2.5}
+-                  markerEnd="url(#arrowhead)"
+-                  style={{ cursor: onReactionClick ? "pointer" : "default" }}
+-                  onClick={() => onReactionClick?.(reaction.id)}
+-                >
+-                  <title>
+-                    {reaction.name}: {reaction.equation}
+-                  </title>
+-                </line>
++                <g key={`${slot.id}-edge-${i}`}>
++                  {/* Wide, invisible hit target — the visible line below is
++                      only 2.5-4px wide, which is a frustratingly small
++                      click/tap target on its own. `pointer-events: stroke`
++                      makes this line's full stroke width clickable even
++                      though it isn't painted. */}
++                  <line
++                    x1={from.x}
++                    y1={from.y}
++                    x2={to.x}
++                    y2={to.y}
++                    stroke="transparent"
++                    strokeWidth={24}
++                    style={{
++                      cursor: onReactionClick ? "pointer" : "default",
++                      pointerEvents: "stroke",
++                    }}
++                    onClick={() => onReactionClick?.(reaction.id)}
++                  >
++                    <title>
++                      {reaction.name}: {reaction.equation}
++                    </title>
++                  </line>
++                  <line
++                    x1={from.x}
++                    y1={from.y}
++                    x2={to.x}
++                    y2={to.y}
++                    stroke={isSelected ? "#1d4ed8" : "#94a3b8"}
++                    strokeWidth={isSelected ? 4 : 2.5}
++                    markerEnd="url(#arrowhead)"
++                    pointerEvents="none"
++                  />
++                </g>
+               );
+             })}
+           </g>
+@@ -191,16 +213,21 @@ export default function PathwayMap({
+       {Object.entries(METABOLITE_POSITIONS).map(([id, pos]) => {
+         const metabolite = metaboliteById.get(id);
+         if (!metabolite) return null;
++        const isSelected = selectedMetaboliteId === id;
+         return (
+-          <g key={`metabolite-${id}`}>
++          <g
++            key={`metabolite-${id}`}
++            onClick={() => onMetaboliteClick?.(id)}
++            style={{ cursor: onMetaboliteClick ? "pointer" : "default" }}
++          >
+             <rect
+               x={pos.x - NODE_RX}
+               y={pos.y - NODE_RY}
+               width={NODE_RX * 2}
+               height={NODE_RY * 2}
+               rx={10}
+-              fill="#ffffff"
+-              stroke="#334155"
++              fill={isSelected ? "#1d4ed8" : "#ffffff"}
++              stroke={isSelected ? "#1d4ed8" : "#334155"}
+               strokeWidth={1.5}
+             >
+               <title>{metabolite.name}</title>
+@@ -210,7 +237,7 @@ export default function PathwayMap({
+               y={pos.y + 4}
+               textAnchor="middle"
+               fontSize={12}
+-              fill="#0f172a"
++              fill={isSelected ? "#f8fafc" : "#0f172a"}
+               pointerEvents="none"
+             >
+               {metabolite.name.length > 14 ? `${metabolite.id}` : metabolite.name}
+diff --git a/src/components/ReactionPanel.tsx b/src/components/ReactionPanel.tsx
+new file mode 100644
+index 0000000..f718aa1
+--- /dev/null
++++ b/src/components/ReactionPanel.tsx
+@@ -0,0 +1,138 @@
++import type { Citation, Metabolite, Reaction } from "../types/schema";
++
++export interface ReactionPanelProps {
++  reaction: Reaction;
++  metaboliteById: Map<string, Metabolite>;
++  selectedMetaboliteId?: string | null;
++  onMetaboliteClick?: (metaboliteId: string) => void;
++}
++
++function CitationList({ citations }: { citations: Citation[] }) {
++  if (citations.length === 0) return null;
++  return (
++    <ul style={{ margin: "0.25rem 0 0", padding: 0, listStyle: "none" }}>
++      {citations.map((c, i) => (
++        <li key={i} style={{ fontSize: "0.85em", color: "#64748b" }}>
++          {c.url ? (
++            <a href={c.url} target="_blank" rel="noreferrer">
++              {c.source}
++            </a>
++          ) : (
++            c.source
++          )}
++          {c.note ? ` — ${c.note}` : ""}
++        </li>
++      ))}
++    </ul>
++  );
++}
++
++function MetaboliteNames({
++  ids,
++  metaboliteById,
++  selectedMetaboliteId,
++  onMetaboliteClick,
++}: {
++  ids: string[];
++  metaboliteById: Map<string, Metabolite>;
++  selectedMetaboliteId?: string | null;
++  onMetaboliteClick?: (metaboliteId: string) => void;
++}) {
++  return (
++    <>
++      {ids.map((id, i) => {
++        const metabolite = metaboliteById.get(id);
++        const isSelected = selectedMetaboliteId === id;
++        return (
++          <span key={id}>
++            {i > 0 && " + "}
++            <span
++              onClick={() => onMetaboliteClick?.(id)}
++              style={{
++                cursor: onMetaboliteClick ? "pointer" : "default",
++                textDecoration: onMetaboliteClick ? "underline" : "none",
++                textDecorationStyle: "dotted",
++                color: isSelected ? "#1d4ed8" : "inherit",
++                fontWeight: isSelected ? 600 : 400,
++              }}
++              title={onMetaboliteClick ? "View structure" : undefined}
++            >
++              {metabolite?.name ?? id}
++            </span>
++          </span>
++        );
++      })}
++    </>
++  );
++}
++
++export default function ReactionPanel({
++  reaction,
++  metaboliteById,
++  selectedMetaboliteId,
++  onMetaboliteClick,
++}: ReactionPanelProps) {
++  return (
++    <div>
++      <h2 style={{ marginBottom: "0.25rem" }}>{reaction.name}</h2>
++
++      <p
++        style={{
++          fontFamily: "monospace",
++          fontSize: "1.05em",
++          background: "#f1f5f9",
++          padding: "0.5rem 0.75rem",
++          borderRadius: 6,
++          display: "inline-block",
++        }}
++      >
++        <MetaboliteNames
++          ids={reaction.substrateIds}
++          metaboliteById={metaboliteById}
++          selectedMetaboliteId={selectedMetaboliteId}
++          onMetaboliteClick={onMetaboliteClick}
++        />
++        {" "}
++        {reaction.reversible ? "⇌" : "→"}
++        {" "}
++        <MetaboliteNames
++          ids={reaction.productIds}
++          metaboliteById={metaboliteById}
++          selectedMetaboliteId={selectedMetaboliteId}
++          onMetaboliteClick={onMetaboliteClick}
++        />
++      </p>
++
++      <p style={{ color: "#64748b", fontSize: "0.9em", margin: "0.25rem 0 0.75rem" }}>
++        Equation as written: <code>{reaction.equation}</code> · Compartment:{" "}
++        {reaction.compartment} ·{" "}
++        {reaction.reversible ? "Reversible" : "Irreversible in vivo"}
++      </p>
++
++      <section style={{ marginBottom: "0.75rem" }}>
++        <h3 style={sectionHeadingStyle}>Mechanism</h3>
++        <p style={{ margin: 0 }}>{reaction.mechanismNotes}</p>
++      </section>
++
++      {reaction.deltaGNote && (
++        <section style={{ marginBottom: "0.75rem" }}>
++          <h3 style={sectionHeadingStyle}>Thermodynamics</h3>
++          <p style={{ margin: 0 }}>{reaction.deltaGNote}</p>
++        </section>
++      )}
++
++      <section>
++        <h3 style={sectionHeadingStyle}>Citations</h3>
++        <CitationList citations={reaction.citations} />
++      </section>
++    </div>
++  );
++}
++
++const sectionHeadingStyle: React.CSSProperties = {
++  fontSize: "0.85em",
++  textTransform: "uppercase",
++  letterSpacing: "0.04em",
++  color: "#64748b",
++  margin: "0 0 0.25rem",
++};
+diff --git a/src/data/glycolysis/metabolites.json b/src/data/glycolysis/metabolites.json
+index 8418cd0..b238db5 100644
+--- a/src/data/glycolysis/metabolites.json
++++ b/src/data/glycolysis/metabolites.json
+@@ -1,20 +1,123 @@
+ [
+-  { "id": "glucose", "name": "Glucose", "formula": "C6H12O6", "compartment": "cytosol" },
+-  { "id": "g6p", "name": "Glucose-6-phosphate", "formula": "C6H13O9P", "compartment": "cytosol" },
+-  { "id": "f6p", "name": "Fructose-6-phosphate", "formula": "C6H13O9P", "compartment": "cytosol" },
+-  { "id": "f16bp", "name": "Fructose-1,6-bisphosphate", "formula": "C6H14O12P2", "compartment": "cytosol" },
+-  { "id": "dhap", "name": "Dihydroxyacetone phosphate", "formula": "C3H7O6P", "compartment": "cytosol" },
+-  { "id": "g3p", "name": "Glyceraldehyde-3-phosphate", "formula": "C3H7O6P", "compartment": "cytosol" },
+-  { "id": "bpg13", "name": "1,3-Bisphosphoglycerate", "formula": "C3H8O10P2", "compartment": "cytosol" },
+-  { "id": "pg3", "name": "3-Phosphoglycerate", "formula": "C3H7O7P", "compartment": "cytosol" },
+-  { "id": "pg2", "name": "2-Phosphoglycerate", "formula": "C3H7O7P", "compartment": "cytosol" },
+-  { "id": "pep", "name": "Phosphoenolpyruvate", "formula": "C3H5O6P", "compartment": "cytosol" },
+-  { "id": "pyruvate", "name": "Pyruvate", "formula": "C3H4O3", "compartment": "cytosol" },
+-  { "id": "atp", "name": "ATP", "compartment": "cytosol" },
+-  { "id": "adp", "name": "ADP", "compartment": "cytosol" },
+-  { "id": "amp", "name": "AMP", "compartment": "cytosol" },
+-  { "id": "pi", "name": "Inorganic phosphate", "formula": "HPO4(2-)", "compartment": "cytosol" },
+-  { "id": "nad", "name": "NAD+", "compartment": "cytosol" },
+-  { "id": "nadh", "name": "NADH", "compartment": "cytosol" },
+-  { "id": "citrate", "name": "Citrate", "formula": "C6H8O7", "compartment": "cytosol" }
++  {
++    "id": "glucose",
++    "name": "Glucose",
++    "formula": "C6H12O6",
++    "compartment": "cytosol",
++    "pubchemCid": 5793
++  },
++  {
++    "id": "g6p",
++    "name": "Glucose-6-phosphate",
++    "formula": "C6H13O9P",
++    "compartment": "cytosol",
++    "pubchemCid": 5958
++  },
++  {
++    "id": "f6p",
++    "name": "Fructose-6-phosphate",
++    "formula": "C6H13O9P",
++    "compartment": "cytosol",
++    "pubchemCid": 440641
++  },
++  {
++    "id": "f16bp",
++    "name": "Fructose-1,6-bisphosphate",
++    "formula": "C6H14O12P2",
++    "compartment": "cytosol",
++    "pubchemCid": 10267
++  },
++  {
++    "id": "dhap",
++    "name": "Dihydroxyacetone phosphate",
++    "formula": "C3H7O6P",
++    "compartment": "cytosol",
++    "pubchemCid": 668
++  },
++  {
++    "id": "g3p",
++    "name": "Glyceraldehyde-3-phosphate",
++    "formula": "C3H7O6P",
++    "compartment": "cytosol",
++    "pubchemCid": 729
++  },
++  {
++    "id": "bpg13",
++    "name": "1,3-Bisphosphoglycerate",
++    "formula": "C3H8O10P2",
++    "compartment": "cytosol",
++    "pubchemCid": 683
++  },
++  {
++    "id": "pg3",
++    "name": "3-Phosphoglycerate",
++    "formula": "C3H7O7P",
++    "compartment": "cytosol",
++    "pubchemCid": 439183
++  },
++  {
++    "id": "pg2",
++    "name": "2-Phosphoglycerate",
++    "formula": "C3H7O7P",
++    "compartment": "cytosol",
++    "pubchemCid": 59
++  },
++  {
++    "id": "pep",
++    "name": "Phosphoenolpyruvate",
++    "formula": "C3H5O6P",
++    "compartment": "cytosol",
++    "pubchemCid": 1005
++  },
++  {
++    "id": "pyruvate",
++    "name": "Pyruvate",
++    "formula": "C3H4O3",
++    "compartment": "cytosol",
++    "pubchemCid": 1060
++  },
++  {
++    "id": "atp",
++    "name": "ATP",
++    "compartment": "cytosol",
++    "pubchemCid": 5957
++  },
++  {
++    "id": "adp",
++    "name": "ADP",
++    "compartment": "cytosol",
++    "pubchemCid": 6022
++  },
++  {
++    "id": "amp",
++    "name": "AMP",
++    "compartment": "cytosol",
++    "pubchemCid": 6083
++  },
++  {
++    "id": "pi",
++    "name": "Inorganic phosphate",
++    "formula": "HPO4(2-)",
++    "compartment": "cytosol",
++    "pubchemCid": 1061
++  },
++  {
++    "id": "nad",
++    "name": "NAD+",
++    "compartment": "cytosol",
++    "pubchemCid": 925
++  },
++  {
++    "id": "nadh",
++    "name": "NADH",
++    "compartment": "cytosol",
++    "pubchemCid": 439153
++  },
++  {
++    "id": "citrate",
++    "name": "Citrate",
++    "formula": "C6H8O7",
++    "compartment": "cytosol",
++    "pubchemCid": 311
++  }
+ ]
+diff --git a/src/types/schema.ts b/src/types/schema.ts
+index 1485eb6..74f0ff6 100644
+--- a/src/types/schema.ts
++++ b/src/types/schema.ts
+@@ -26,6 +26,16 @@ export interface Metabolite {
+   name: string;
+   formula?: string;
+   compartment: Compartment;
++  /**
++   * PubChem Compound ID for the free/unbound small molecule. Used to load a
++   * 3D structure via NGL (see StructureViewer/MetaboliteViewer) — distinct
++   * from `structure.pdbId` on enzyme isoforms, which points to a protein
++   * structure. Verified by hand against Wikipedia/PubChem infoboxes at
++   * data-entry time (see docs/PROJECT_NOTES.md) rather than looked up
++   * programmatically, so worth a spot-check if a rendered structure looks
++   * wrong for a given metabolite.
++   */
++  pubchemCid?: number;
+ }
+ 
+ /** A stable position in the pathway topology, independent of which isoform fills it. */

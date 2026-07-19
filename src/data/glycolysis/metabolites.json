@@ -1,20 +1,123 @@
 [
-  { "id": "glucose", "name": "Glucose", "formula": "C6H12O6", "compartment": "cytosol" },
-  { "id": "g6p", "name": "Glucose-6-phosphate", "formula": "C6H13O9P", "compartment": "cytosol" },
-  { "id": "f6p", "name": "Fructose-6-phosphate", "formula": "C6H13O9P", "compartment": "cytosol" },
-  { "id": "f16bp", "name": "Fructose-1,6-bisphosphate", "formula": "C6H14O12P2", "compartment": "cytosol" },
-  { "id": "dhap", "name": "Dihydroxyacetone phosphate", "formula": "C3H7O6P", "compartment": "cytosol" },
-  { "id": "g3p", "name": "Glyceraldehyde-3-phosphate", "formula": "C3H7O6P", "compartment": "cytosol" },
-  { "id": "bpg13", "name": "1,3-Bisphosphoglycerate", "formula": "C3H8O10P2", "compartment": "cytosol" },
-  { "id": "pg3", "name": "3-Phosphoglycerate", "formula": "C3H7O7P", "compartment": "cytosol" },
-  { "id": "pg2", "name": "2-Phosphoglycerate", "formula": "C3H7O7P", "compartment": "cytosol" },
-  { "id": "pep", "name": "Phosphoenolpyruvate", "formula": "C3H5O6P", "compartment": "cytosol" },
-  { "id": "pyruvate", "name": "Pyruvate", "formula": "C3H4O3", "compartment": "cytosol" },
-  { "id": "atp", "name": "ATP", "compartment": "cytosol" },
-  { "id": "adp", "name": "ADP", "compartment": "cytosol" },
-  { "id": "amp", "name": "AMP", "compartment": "cytosol" },
-  { "id": "pi", "name": "Inorganic phosphate", "formula": "HPO4(2-)", "compartment": "cytosol" },
-  { "id": "nad", "name": "NAD+", "compartment": "cytosol" },
-  { "id": "nadh", "name": "NADH", "compartment": "cytosol" },
-  { "id": "citrate", "name": "Citrate", "formula": "C6H8O7", "compartment": "cytosol" }
+  {
+    "id": "glucose",
+    "name": "Glucose",
+    "formula": "C6H12O6",
+    "compartment": "cytosol",
+    "pubchemCid": 5793
+  },
+  {
+    "id": "g6p",
+    "name": "Glucose-6-phosphate",
+    "formula": "C6H13O9P",
+    "compartment": "cytosol",
+    "pubchemCid": 5958
+  },
+  {
+    "id": "f6p",
+    "name": "Fructose-6-phosphate",
+    "formula": "C6H13O9P",
+    "compartment": "cytosol",
+    "pubchemCid": 440641
+  },
+  {
+    "id": "f16bp",
+    "name": "Fructose-1,6-bisphosphate",
+    "formula": "C6H14O12P2",
+    "compartment": "cytosol",
+    "pubchemCid": 10267
+  },
+  {
+    "id": "dhap",
+    "name": "Dihydroxyacetone phosphate",
+    "formula": "C3H7O6P",
+    "compartment": "cytosol",
+    "pubchemCid": 668
+  },
+  {
+    "id": "g3p",
+    "name": "Glyceraldehyde-3-phosphate",
+    "formula": "C3H7O6P",
+    "compartment": "cytosol",
+    "pubchemCid": 729
+  },
+  {
+    "id": "bpg13",
+    "name": "1,3-Bisphosphoglycerate",
+    "formula": "C3H8O10P2",
+    "compartment": "cytosol",
+    "pubchemCid": 683
+  },
+  {
+    "id": "pg3",
+    "name": "3-Phosphoglycerate",
+    "formula": "C3H7O7P",
+    "compartment": "cytosol",
+    "pubchemCid": 439183
+  },
+  {
+    "id": "pg2",
+    "name": "2-Phosphoglycerate",
+    "formula": "C3H7O7P",
+    "compartment": "cytosol",
+    "pubchemCid": 59
+  },
+  {
+    "id": "pep",
+    "name": "Phosphoenolpyruvate",
+    "formula": "C3H5O6P",
+    "compartment": "cytosol",
+    "pubchemCid": 1005
+  },
+  {
+    "id": "pyruvate",
+    "name": "Pyruvate",
+    "formula": "C3H4O3",
+    "compartment": "cytosol",
+    "pubchemCid": 1060
+  },
+  {
+    "id": "atp",
+    "name": "ATP",
+    "compartment": "cytosol",
+    "pubchemCid": 5957
+  },
+  {
+    "id": "adp",
+    "name": "ADP",
+    "compartment": "cytosol",
+    "pubchemCid": 6022
+  },
+  {
+    "id": "amp",
+    "name": "AMP",
+    "compartment": "cytosol",
+    "pubchemCid": 6083
+  },
+  {
+    "id": "pi",
+    "name": "Inorganic phosphate",
+    "formula": "HPO4(2-)",
+    "compartment": "cytosol",
+    "pubchemCid": 1061
+  },
+  {
+    "id": "nad",
+    "name": "NAD+",
+    "compartment": "cytosol",
+    "pubchemCid": 925
+  },
+  {
+    "id": "nadh",
+    "name": "NADH",
+    "compartment": "cytosol",
+    "pubchemCid": 439153
+  },
+  {
+    "id": "citrate",
+    "name": "Citrate",
+    "formula": "C6H8O7",
+    "compartment": "cytosol",
+    "pubchemCid": 311
+  }
 ]

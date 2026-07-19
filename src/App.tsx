@@ -4,6 +4,8 @@ import reactions from "./data/glycolysis/reactions.json";
 import enzymeData from "./data/glycolysis/enzymes.json";
 import PathwayMap from "./components/PathwayMap";
 import StructureViewer from "./components/StructureViewer";
+import ReactionPanel from "./components/ReactionPanel";
+import MetaboliteViewer from "./components/MetaboliteViewer";
 import type {
   EnzymeIsoform,
   EnzymeSlot,
@@ -27,6 +29,7 @@ export default function App() {
   const [tissue, setTissue] = useState<TissueContext>("muscle");
   const [selectedEnzymeSlot, setSelectedEnzymeSlot] = useState<string | null>(null);
   const [selectedReactionId, setSelectedReactionId] = useState<string | null>(null);
+  const [selectedMetaboliteId, setSelectedMetaboliteId] = useState<string | null>(null);
 
   const selectedIsoform = selectedEnzymeSlot
     ? dataset.isoforms.find(
@@ -36,6 +39,11 @@ export default function App() {
 
   const selectedReaction = selectedReactionId
     ? dataset.reactions.find((r) => r.id === selectedReactionId)
+    : undefined;
+
+  const metaboliteById = new Map(dataset.metabolites.map((m) => [m.id, m]));
+  const selectedMetabolite = selectedMetaboliteId
+    ? metaboliteById.get(selectedMetaboliteId)
     : undefined;
 
   return (
@@ -59,20 +67,29 @@ export default function App() {
           tissue={tissue}
           selectedEnzymeSlot={selectedEnzymeSlot}
           selectedReactionId={selectedReactionId}
+          selectedMetaboliteId={selectedMetaboliteId}
           onEnzymeClick={(slotId) => {
             setSelectedEnzymeSlot(slotId);
             setSelectedReactionId(null);
+            setSelectedMetaboliteId(null);
           }}
           onReactionClick={(reactionId) => {
             setSelectedReactionId(reactionId);
             setSelectedEnzymeSlot(null);
+            setSelectedMetaboliteId(null);
+          }}
+          onMetaboliteClick={(metaboliteId) => {
+            setSelectedMetaboliteId(metaboliteId);
+            setSelectedEnzymeSlot(null);
+            setSelectedReactionId(null);
           }}
         />
       </div>
 
-      {/* Structure viewer (enzyme click) is now real (NGL). Reaction/mechanism
-          panel (reaction click) is still the next piece of UI to build on
-          top of this, per docs/PROJECT_NOTES.md. */}
+      {/* Structure viewer (enzyme click), reaction panel (reaction click),
+          and metabolite viewer (metabolite node or in-equation name click)
+          are all real now. Objective 4 (add glucose / flux over time) is
+          the next piece of UI to build, per docs/PROJECT_NOTES.md. */}
       <div style={{ marginTop: "1.5rem", minHeight: "6rem" }}>
         {selectedIsoform && (
           <div>
@@ -86,15 +103,31 @@ export default function App() {
           </div>
         )}
         {selectedReaction && (
-          <div>
-            <h2>{selectedReaction.name}</h2>
-            <p>{selectedReaction.equation}</p>
-            <p>{selectedReaction.mechanismNotes}</p>
+          <ReactionPanel
+            reaction={selectedReaction}
+            metaboliteById={metaboliteById}
+            selectedMetaboliteId={selectedMetaboliteId}
+            onMetaboliteClick={setSelectedMetaboliteId}
+          />
+        )}
+        {/* Shown whenever a metabolite is selected, whether that came from
+            clicking a map node (which clears enzyme/reaction selection
+            above) or clicking a name inside the reaction equation (which
+            doesn't — so this renders alongside the reaction panel). */}
+        {selectedMetabolite && !selectedIsoform && (
+          <div style={{ marginTop: selectedReaction ? "1rem" : 0 }}>
+            <h2>{selectedMetabolite.name}</h2>
+            <p>
+              Formula: {selectedMetabolite.formula ?? "—"} · Compartment:{" "}
+              {selectedMetabolite.compartment}
+            </p>
+            <MetaboliteViewer metabolite={selectedMetabolite} />
           </div>
         )}
-        {!selectedIsoform && !selectedReaction && (
+        {!selectedIsoform && !selectedReaction && !selectedMetabolite && (
           <p style={{ color: "#64748b" }}>
-            Click an enzyme node (circle) or a reaction edge (arrow) above for details.
+            Click an enzyme node (circle), a reaction edge (arrow), or a
+            metabolite box above for details.
           </p>
         )}
       </div>

@@ -95,22 +95,25 @@ Core objectives:
   annotation. Residue ranges are still the placeholder values noted above —
   not yet verified against real PDB numbering.
 - `src/App.tsx` — wires `PathwayMap` to tissue-context state; enzyme click
-  now renders the real `StructureViewer` (not yet the real reaction panel,
-  which still shows plain text)
+  renders the real `StructureViewer`, reaction click renders the real
+  `ReactionPanel`
+- `src/components/ReactionPanel.tsx` — reaction detail panel: substrate/
+  product equation (using metabolite display names), reversibility and
+  compartment, mechanism notes, thermodynamics note (`deltaGNote`, when
+  present), and a citations list
 - `docs/schema.md` — design rationale for the data model
 - `docs/PROJECT_NOTES.md` — this file
 
 ## Next step
 
-Structure viewer is done (see above) — still need to verify placeholder
-residue ranges against real PDB numbering before this is user-facing.
-Remaining UI piece:
-- Reaction panel: on reaction edge click, show the full equation,
-  `mechanismNotes`, `deltaGNote`, and citations in a proper panel (not the
-  current one-line text dump)
-- Once both panels exist: wire the "add glucose" / flux-through-time
-  objective (objective 4) using `computeRate` + client-side ODE integration
-  over the full 10-step dataset that now exists
+Structure viewer and reaction panel are both done (see above) — still need
+to verify placeholder residue ranges and illustrative kinetic parameters
+against real sources before this is user-facing. Remaining piece before
+liver isoforms / inhibitors, per scope discipline:
+- Objective 4: "add glucose" / flux-over-time UI, using `computeRate` +
+  client-side ODE integration over the full 10-step dataset that now
+  exists. This is the last piece of the muscle-only end-to-end pipeline
+  (map -> structure viewer -> reaction panel -> simulation).
 - Still deferred, per scope discipline: liver isoforms for steps other than
   HK, inhibitors, genetic variants
 
@@ -143,3 +146,34 @@ Remaining UI piece:
   Not yet verified in a real browser against a live RCSB fetch (sandboxed
   build environment couldn't reach rcsb.org) — check this first with
   `npm run dev` locally before trusting it end-to-end.
+- Session 6: verified the NGL structure viewer works against live RCSB
+  fetches in a real browser (confirmed by Ben, not just build-checked).
+  Committed and tagged that work as v0.2.0. Built `ReactionPanel.tsx` and
+  wired it into `App.tsx`, replacing the one-line reaction text dump —
+  shows the substrate/product equation with real metabolite names,
+  reversibility/compartment, mechanism notes, thermodynamics note, and
+  citations. Verified `tsc -b`/`vite build` clean. Not yet checked in a
+  real browser.
+- Session 7: fixed a real usability bug — reaction edges were
+  only clickable on their 2.5px visible stroke. Added an invisible 24px-wide
+  `pointer-events: stroke` hit-target line alongside each visible edge in
+  `PathwayMap.tsx`; the visible line itself is now `pointer-events: none`.
+  Also added `MetaboliteViewer.tsx` — a small-molecule counterpart to
+  StructureViewer. Metabolites aren't proteins, so there's no PDB entry;
+  instead it pulls a 3D SDF conformer from PubChem by CID
+  (`rest/pug/compound/cid/<cid>/record/SDF/?record_type=3d`, falling back
+  to `record_type=2d` for a few highly ionic species like bare phosphate
+  that lack a 3D conformer) and hands it to the same NGL Stage machinery.
+  Added `pubchemCid` to the `Metabolite` schema and hand-verified CIDs for
+  all 18 metabolites against Wikipedia/PubChem infoboxes (not looked up
+  programmatically — spot-check if a rendered structure looks wrong).
+  Main-chain metabolite map nodes are now clickable; cofactors (ATP, NADH,
+  etc., not drawn as map nodes) are viewable by clicking their name inside
+  the reaction equation in `ReactionPanel`. Verified `tsc -b`/`vite build`
+  clean. Two things NOT yet verified in a real browser (sandbox can't
+  reach rcsb.org or pubchem.ncbi.nlm.nih.gov): the wider click target
+  actually feels right, and PubChem's PUG REST allows the cross-origin
+  fetch NGL needs (widely used for client-side SDF fetches, but not
+  something I could confirm directly — also worth knowing PubChem asks for
+  no more than 5 requests/sec, relevant if someone clicks through several
+  metabolites quickly).
