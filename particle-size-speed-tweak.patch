@@ -1,0 +1,65 @@
+diff --git a/src/components/PathwayMap.tsx b/src/components/PathwayMap.tsx
+index 80f47d1..6f2461e 100644
+--- a/src/components/PathwayMap.tsx
++++ b/src/components/PathwayMap.tsx
+@@ -193,8 +193,18 @@ const FLUX_EPSILON = 1e-3;
+ const FLUX_SATURATION = 1.2;
+ const MIN_SPAWN_PER_SEC = 0.4;
+ const MAX_SPAWN_PER_SEC = 9;
+-const MIN_PROGRESS_PER_SEC = 0.35; // full edge crossing in ~2.9s at minimum
+-const MAX_PROGRESS_PER_SEC = 1.4; // full edge crossing in ~0.7s at max flux
++/**
++ * Speed is linear in |flux| (progressPerSecond = absFlux * SPEED_PER_FLUX),
++ * not an affine min+saturation blend — a reaction running at half the
++ * flux of another should visibly move at half the speed, not land in a
++ * narrow band close to every other reaction's speed. `MIN_PROGRESS_PER_SEC`
++ * is only a floor so a barely-nonzero flux still crawls forward instead of
++ * stalling forever; `MAX_PROGRESS_PER_SEC` caps it once |flux| reaches
++ * `FLUX_SATURATION` so a very fast step doesn't blur past unreadably.
++ */
++const MIN_PROGRESS_PER_SEC = 0.12; // full edge crossing in ~8.3s for a barely-moving reaction
++const MAX_PROGRESS_PER_SEC = 1.6; // full edge crossing in ~0.6s once flux saturates
++const SPEED_PER_FLUX = MAX_PROGRESS_PER_SEC / FLUX_SATURATION;
+ /**
+  * Reversible (near-equilibrium) steps run substantial flux in both
+  * directions even when net flux is small — that's the physical meaning of
+@@ -212,8 +222,7 @@ function densityFromFlux(absFlux: number): number {
+ }
+ 
+ function speedFromFlux(absFlux: number): number {
+-  const saturation = Math.min(1, absFlux / FLUX_SATURATION);
+-  return MIN_PROGRESS_PER_SEC + saturation * (MAX_PROGRESS_PER_SEC - MIN_PROGRESS_PER_SEC);
++  return Math.min(MAX_PROGRESS_PER_SEC, Math.max(MIN_PROGRESS_PER_SEC, absFlux * SPEED_PER_FLUX));
+ }
+ 
+ let particleIdCounter = 0;
+@@ -333,7 +342,9 @@ function FluxParticles({
+           carbons: 3,
+           phosphates: 0,
+         };
+-        const spacing = 4.5;
++        // 2x the original scale (spacing/radii/offset all doubled together)
++        // — the initial size read as too small/hard to see against the map.
++        const spacing = 9;
+         const span = (model.carbons - 1) * spacing;
+ 
+         return (
+@@ -343,15 +354,15 @@ function FluxParticles({
+                 key={`c-${i}`}
+                 cx={-span / 2 + i * spacing}
+                 cy={0}
+-                r={1.6}
++                r={3.2}
+                 fill={p.stream === "fwd" ? "#3b82f6" : "#94a3b8"}
+               />
+             ))}
+             {model.phosphates >= 1 && (
+-              <circle cx={-span / 2} cy={-3.4} r={1.9} fill="#f59e0b" />
++              <circle cx={-span / 2} cy={-6.8} r={3.8} fill="#f59e0b" />
+             )}
+             {model.phosphates >= 2 && (
+-              <circle cx={span / 2} cy={-3.4} r={1.9} fill="#f59e0b" />
++              <circle cx={span / 2} cy={-6.8} r={3.8} fill="#f59e0b" />
+             )}
+           </g>
+         );

@@ -1,0 +1,242 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 68c1a70..716b8b0 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -34,6 +34,8 @@ export default function App() {
+   const [selectedMetaboliteId, setSelectedMetaboliteId] = useState<string | null>(null);
+   const [reactionFlux, setReactionFlux] = useState<Record<string, number>>({});
+   const [concentrations, setConcentrations] = useState<Record<string, number>>({});
++  const [isSimulationRunning, setIsSimulationRunning] = useState(false);
++  const [simSpeed, setSimSpeed] = useState(1);
+ 
+   // Recomputed only when tissue changes, not every simulation frame.
+   const simulationSteps = useMemo(() => resolveSteps(dataset, tissue), [tissue]);
+@@ -81,6 +83,8 @@ export default function App() {
+           selectedMetaboliteId={selectedMetaboliteId}
+           reactionFlux={reactionFlux}
+           concentrations={concentrations}
++          isSimulationRunning={isSimulationRunning}
++          simSpeed={simSpeed}
+           onEnzymeClick={(slotId) => {
+             setSelectedEnzymeSlot(slotId);
+             setSelectedReactionId(null);
+@@ -144,7 +148,13 @@ export default function App() {
+         )}
+       </div>
+ 
+-      <SimulationPanel steps={simulationSteps} onFlux={setReactionFlux} onConcentrations={setConcentrations} />
++      <SimulationPanel
++        steps={simulationSteps}
++        onFlux={setReactionFlux}
++        onConcentrations={setConcentrations}
++        onPlayingChange={setIsSimulationRunning}
++        onSpeedChange={setSimSpeed}
++      />
+ 
+       <h2>Loaded data counts</h2>
+       <ul>
+diff --git a/src/components/SimulationPanel.tsx b/src/components/SimulationPanel.tsx
+index 5473f50..141b766 100644
+--- a/src/components/SimulationPanel.tsx
++++ b/src/components/SimulationPanel.tsx
+@@ -4,14 +4,14 @@ import type { ConcentrationMap } from "../sim/rateLaws";
+ import { GLUCOSE_PULSE_MM, DEFAULT_INITIAL_CONCENTRATIONS, advance, computeFlux } from "../sim/simulate";
+ import type { ResolvedStep } from "../sim/simulate";
+ 
+-// Default was 1x; the underlying rate laws (illustrative vMax values, real
+-// product-inhibition/allosteric effects) make 1x read as sluggish for a
+-// quick demo, so 4x is now the floor rather than the default-off state.
++// 1x is back as the default — easier to actually watch the flux particle
++// animation land, rather than starting at 4x. Higher speeds are still
++// available for anyone who wants to fast-forward past the slow build-up.
+ // Substep count scales with model-time span per frame (see
+ // TARGET_INTERNAL_DT below), so raising the ceiling doesn't reintroduce
+ // instability at high speed.
+-const SPEED_OPTIONS = [4, 8, 16, 32];
+-const DEFAULT_SPEED = 4;
++const SPEED_OPTIONS = [1, 4, 8, 16, 32];
++const DEFAULT_SPEED = 1;
+ 
+ /**
+  * Target internal RK4 step size (seconds of model time), independent of
+@@ -30,9 +30,25 @@ export interface SimulationPanelProps {
+   /** Latest concentrations, one call per frame — forwarded to
+    * `PathwayMap` for the metabolite "fill level" visualization. */
+   onConcentrations?: (conc: ConcentrationMap) => void;
++  /**
++   * Fires whenever Play/Pause/Reset actually changes whether the
++   * integrator is running. `PathwayMap`'s flux particles use this to stay
++   * frozen when concentrations change from "Add glucose" or "Reset" while
++   * paused — otherwise a nonzero instantaneous flux, computed from a
++   * static snapshot, would look like the animation is running unprompted.
++   */
++  onPlayingChange?: (isPlaying: boolean) => void;
++  /** Fires whenever the speed multiplier changes (and once on mount with the default), so the flux particle animation can scale its own playback speed to match rather than only reflecting instantaneous flux. */
++  onSpeedChange?: (speed: number) => void;
+ }
+ 
+-export default function SimulationPanel({ steps, onFlux, onConcentrations }: SimulationPanelProps) {
++export default function SimulationPanel({
++  steps,
++  onFlux,
++  onConcentrations,
++  onPlayingChange,
++  onSpeedChange,
++}: SimulationPanelProps) {
+   const [conc, setConc] = useState<ConcentrationMap>(DEFAULT_INITIAL_CONCENTRATIONS);
+   const [isPlaying, setIsPlaying] = useState(false);
+   const [speed, setSpeed] = useState(DEFAULT_SPEED);
+@@ -55,6 +71,16 @@ export default function SimulationPanel({ steps, onFlux, onConcentrations }: Sim
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [conc]);
+ 
++  useEffect(() => {
++    onPlayingChange?.(isPlaying);
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [isPlaying]);
++
++  useEffect(() => {
++    onSpeedChange?.(speed);
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [speed]);
++
+   useEffect(() => {
+     if (!isPlaying) {
+       lastTsRef.current = null;
+--- a/src/components/PathwayMap.tsx	2026-07-23 08:46:14.575662000 +0000
++++ b/src/components/PathwayMap.tsx	2026-07-23 09:14:34.373870944 +0000
+@@ -246,10 +246,24 @@
+ function FluxParticles({
+   reactionFlux,
+   reversibleReactions,
++  running,
++  speedMultiplier,
+ }: {
+   reactionFlux: Record<string, number>;
+   /** Set of reaction ids resolved to a `reversible_mm` isoform for the current tissue — these get a secondary back-flow stream. */
+   reversibleReactions: Set<string>;
++  /**
++   * Whether the ODE integrator is actually playing right now. `reactionFlux`
++   * is recomputed from whatever the current concentrations are even while
++   * paused (e.g. right after "Add glucose", before Play is pressed) — that
++   * flux is real, but animating from it looked like the simulation was
++   * secretly running on its own. Gating movement/spawning on this instead
++   * of just "is reactionFlux present" keeps particles frozen in place
++   * until playback is actually happening.
++   */
++  running: boolean;
++  /** The 1x-32x playback multiplier from SimulationPanel — scales both glide speed and spawn density so the speed buttons visibly speed up the particle animation too, not just the underlying concentration math. */
++  speedMultiplier: number;
+ }) {
+   const [particles, setParticles] = useState<FluxParticle[]>([]);
+   const particlesRef = useRef<FluxParticle[]>([]);
+@@ -259,6 +273,10 @@
+   fluxRef.current = reactionFlux;
+   const reversibleRef = useRef(reversibleReactions);
+   reversibleRef.current = reversibleReactions;
++  const runningRef = useRef(running);
++  runningRef.current = running;
++  const speedMultiplierRef = useRef(speedMultiplier);
++  speedMultiplierRef.current = speedMultiplier;
+   const lastTsRef = useRef<number | null>(null);
+ 
+   useEffect(() => {
+@@ -268,9 +286,18 @@
+       const dt = Math.min(0.25, (ts - lastTsRef.current) / 1000);
+       lastTsRef.current = ts;
+ 
++      // Frozen while paused: no advancing, no new spawns. Still schedules
++      // the next frame so playback picks back up immediately once
++      // `running` flips true, without a stale `lastTsRef` causing a jump.
++      if (!runningRef.current) {
++        frameId = requestAnimationFrame(tick);
++        return;
++      }
++
+       const flux = fluxRef.current;
+       const reversible = reversibleRef.current;
+       const sinceSpawn = timeSinceSpawnRef.current;
++      const speedMultiplier = speedMultiplierRef.current;
+       let live = particlesRef.current;
+ 
+       // Advance existing particles, dropping any that finished their arc.
+@@ -291,8 +318,8 @@
+         if (live.length + spawned.length >= MAX_ACTIVE_PARTICLES) break;
+ 
+         const relativeFlux = Math.min(1, absFlux / maxAbsFlux);
+-        const speed = speedFromFlux(relativeFlux);
+-        const rate = densityFromFlux(relativeFlux);
++        const speed = speedFromFlux(relativeFlux) * speedMultiplier;
++        const rate = densityFromFlux(relativeFlux) * speedMultiplier;
+ 
+         const primaryStream: Stream = flowVelocity >= 0 ? "fwd" : "rev";
+         const secondaryStream: Stream = primaryStream === "fwd" ? "rev" : "fwd";
+@@ -303,7 +330,13 @@
+         for (const stream of streams) {
+           const key = `${edge.reactionId}-${edge.edgeIndex}-${stream}`;
+           const streamRate = stream === primaryStream ? rate : rate * SECONDARY_STREAM_RATIO;
+-          const model = (stream === "fwd" ? edge.fromModel : edge.toModel) ?? {
++          // Forward particles carry the shape of what they're becoming
++          // (the "to" pool); reverse particles carry the shape of what
++          // they're reverting to (the "from" pool). This also makes
++          // branch points like aldolase (f16bp -> dhap, f16bp -> g3p) come
++          // out right: each edge's forward stream shows its own 3-carbon
++          // product, not the 6-carbon substrate shared by both edges.
++          const model = (stream === "fwd" ? edge.toModel : edge.fromModel) ?? {
+             carbons: 3,
+             phosphates: 0,
+           };
+@@ -362,11 +395,9 @@
+         const pos = quadraticBezierPoint(p0, control, p1, p.t);
+         const tangent = quadraticBezierTangent(p0, control, p1, p.t);
+         const angle = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+-        // Forward particles carry the substrate's shape (what's leaving the
+-        // "from" pool); reverse particles carry the product's shape (what's
+-        // flowing back out of the "to" pool) — an approximation, since we
+-        // don't model the intermediate transition state visually.
+-        const model = (p.stream === "fwd" ? edge.fromModel : edge.toModel) ?? {
++        // Same forward=toModel / reverse=fromModel convention as the spawn
++        // logic above — see the comment there for why (aldolase's branch).
++        const model = (p.stream === "fwd" ? edge.toModel : edge.fromModel) ?? {
+           carbons: 3,
+           phosphates: 0,
+         };
+@@ -424,6 +455,15 @@
+    * render exactly as they did before concentration existed.
+    */
+   concentrations?: Record<string, number>;
++  /**
++   * Whether the simulation is actually playing right now (not just whether
++   * `reactionFlux` happens to be nonzero). Flux particles freeze when this
++   * is false or absent, even if a nonzero flux was left over from before
++   * pausing/adding glucose — see `FluxParticles`'s `running` prop.
++   */
++  isSimulationRunning?: boolean;
++  /** The 1x-32x playback multiplier from `SimulationPanel`; defaults to 1 if absent. Scales flux-particle glide speed and spawn density to match. */
++  simSpeed?: number;
+ }
+ 
+ const FLUX_IDLE_COLOR = "#94a3b8"; // matches the original unhighlighted edge color
+@@ -473,6 +513,8 @@
+   onMetaboliteClick,
+   reactionFlux,
+   concentrations,
++  isSimulationRunning,
++  simSpeed,
+ }: PathwayMapProps) {
+   // Reversible steps (e.g. aldolase, with its tiny keq) can legitimately run
+   // net-backward — computeRate returns a negative velocity in that case.
+@@ -625,7 +667,12 @@
+           their labels. Purely additive: only mounted while a live
+           `reactionFlux` is being fed in from the simulation. */}
+       {reactionFlux && (
+-        <FluxParticles reactionFlux={reactionFlux} reversibleReactions={reversibleReactions} />
++        <FluxParticles
++          reactionFlux={reactionFlux}
++          reversibleReactions={reversibleReactions}
++          running={isSimulationRunning ?? false}
++          speedMultiplier={simSpeed ?? 1}
++        />
+       )}
+ 
+       {/* Enzyme nodes (one per reaction step, clickable independent of edges) */}

@@ -4,14 +4,14 @@ import type { ConcentrationMap } from "../sim/rateLaws";
 import { GLUCOSE_PULSE_MM, DEFAULT_INITIAL_CONCENTRATIONS, advance, computeFlux } from "../sim/simulate";
 import type { ResolvedStep } from "../sim/simulate";
 
-// Default was 1x; the underlying rate laws (illustrative vMax values, real
-// product-inhibition/allosteric effects) make 1x read as sluggish for a
-// quick demo, so 4x is now the floor rather than the default-off state.
+// 1x is back as the default — easier to actually watch the flux particle
+// animation land, rather than starting at 4x. Higher speeds are still
+// available for anyone who wants to fast-forward past the slow build-up.
 // Substep count scales with model-time span per frame (see
 // TARGET_INTERNAL_DT below), so raising the ceiling doesn't reintroduce
 // instability at high speed.
-const SPEED_OPTIONS = [4, 8, 16, 32];
-const DEFAULT_SPEED = 4;
+const SPEED_OPTIONS = [1, 4, 8, 16, 32];
+const DEFAULT_SPEED = 1;
 
 /**
  * Target internal RK4 step size (seconds of model time), independent of
@@ -30,9 +30,25 @@ export interface SimulationPanelProps {
   /** Latest concentrations, one call per frame — forwarded to
    * `PathwayMap` for the metabolite "fill level" visualization. */
   onConcentrations?: (conc: ConcentrationMap) => void;
+  /**
+   * Fires whenever Play/Pause/Reset actually changes whether the
+   * integrator is running. `PathwayMap`'s flux particles use this to stay
+   * frozen when concentrations change from "Add glucose" or "Reset" while
+   * paused — otherwise a nonzero instantaneous flux, computed from a
+   * static snapshot, would look like the animation is running unprompted.
+   */
+  onPlayingChange?: (isPlaying: boolean) => void;
+  /** Fires whenever the speed multiplier changes (and once on mount with the default), so the flux particle animation can scale its own playback speed to match rather than only reflecting instantaneous flux. */
+  onSpeedChange?: (speed: number) => void;
 }
 
-export default function SimulationPanel({ steps, onFlux, onConcentrations }: SimulationPanelProps) {
+export default function SimulationPanel({
+  steps,
+  onFlux,
+  onConcentrations,
+  onPlayingChange,
+  onSpeedChange,
+}: SimulationPanelProps) {
   const [conc, setConc] = useState<ConcentrationMap>(DEFAULT_INITIAL_CONCENTRATIONS);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
@@ -54,6 +70,16 @@ export default function SimulationPanel({ steps, onFlux, onConcentrations }: Sim
     onFlux?.(computeFlux(stepsRef.current, conc));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conc]);
+
+  useEffect(() => {
+    onPlayingChange?.(isPlaying);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying]);
+
+  useEffect(() => {
+    onSpeedChange?.(speed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speed]);
 
   useEffect(() => {
     if (!isPlaying) {

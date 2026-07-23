@@ -189,23 +189,12 @@ interface FluxParticle {
  * noise near zero.
  */
 const FLUX_EPSILON = 1e-3;
-const MIN_SPAWN_PER_SEC = 0.3;
-const MAX_SPAWN_PER_SEC = 6;
-/**
- * Speed and density are both scaled by |flux| relative to the current
- * *maximum* |flux| across all reactions this frame (same normalization the
- * edge-coloring legend already uses — see `maxFlux` in the main component),
- * not against a hardcoded mM/s constant. A fixed constant was the bug in
- * the previous pass: this dataset's isoforms span vMax 1-10 mM/s (TPI vs.
- * HK, see enzymes.json), so a guessed saturation point like 1.2 mM/s meant
- * most active reactions immediately pinned to the same max speed —
- * "rates not applying" and "all the same speed" were the same root cause.
- * Normalizing by the live max keeps relative speed differences visible
- * regardless of the absolute vMax scale, and keeps working if those
- * illustrative parameters are ever retuned.
- */
-const MIN_PROGRESS_PER_SEC = 0.12; // full edge crossing in ~8.3s for the slowest active reaction
-const MAX_PROGRESS_PER_SEC = 1.6; // full edge crossing in ~0.6s for the fastest active reaction
+/** mM/s of flux that saturates spawn rate / speed scaling, past which more flux just means denser/faster, not unboundedly so. */
+const FLUX_SATURATION = 1.2;
+const MIN_SPAWN_PER_SEC = 0.4;
+const MAX_SPAWN_PER_SEC = 9;
+const MIN_PROGRESS_PER_SEC = 0.35; // full edge crossing in ~2.9s at minimum
+const MAX_PROGRESS_PER_SEC = 1.4; // full edge crossing in ~0.7s at max flux
 /**
  * Reversible (near-equilibrium) steps run substantial flux in both
  * directions even when net flux is small — that's the physical meaning of
@@ -216,23 +205,15 @@ const MAX_PROGRESS_PER_SEC = 1.6; // full edge crossing in ~0.6s for the fastest
  */
 const SECONDARY_STREAM_RATIO = 0.45;
 const MAX_ACTIVE_PARTICLES = 240;
-/** Carbon-dot spacing/radius and phosphate radius, shared with the render below — used here to size the anti-overlap gap. */
-const CARBON_SPACING_PX = 9;
-const CARBON_RADIUS_PX = 3.2;
-/** Minimum visual breathing room enforced between two consecutive particles spawned on the same edge+stream, on top of each particle's own footprint. */
-const MIN_PARTICLE_GAP_PX = 16;
 
-function densityFromFlux(relativeFlux: number): number {
-  return MIN_SPAWN_PER_SEC + relativeFlux * (MAX_SPAWN_PER_SEC - MIN_SPAWN_PER_SEC);
+function densityFromFlux(absFlux: number): number {
+  const saturation = Math.min(1, absFlux / FLUX_SATURATION);
+  return MIN_SPAWN_PER_SEC + saturation * (MAX_SPAWN_PER_SEC - MIN_SPAWN_PER_SEC);
 }
 
-function speedFromFlux(relativeFlux: number): number {
-  return MIN_PROGRESS_PER_SEC + relativeFlux * (MAX_PROGRESS_PER_SEC - MIN_PROGRESS_PER_SEC);
-}
-
-/** Visual length (px) of a particle's carbon backbone, used only to keep consecutive spawns from overlapping. */
-function particleFootprintPx(carbons: number): number {
-  return (carbons - 1) * CARBON_SPACING_PX + 2 * CARBON_RADIUS_PX;
+function speedFromFlux(absFlux: number): number {
+  const saturation = Math.min(1, absFlux / FLUX_SATURATION);
+  return MIN_PROGRESS_PER_SEC + saturation * (MAX_PROGRESS_PER_SEC - MIN_PROGRESS_PER_SEC);
 }
 
 let particleIdCounter = 0;
@@ -246,37 +227,18 @@ let particleIdCounter = 0;
 function FluxParticles({
   reactionFlux,
   reversibleReactions,
-  running,
-  speedMultiplier,
 }: {
   reactionFlux: Record<string, number>;
   /** Set of reaction ids resolved to a `reversible_mm` isoform for the current tissue — these get a secondary back-flow stream. */
   reversibleReactions: Set<string>;
-  /**
-   * Whether the ODE integrator is actually playing right now. `reactionFlux`
-   * is recomputed from whatever the current concentrations are even while
-   * paused (e.g. right after "Add glucose", before Play is pressed) — that
-   * flux is real, but animating from it looked like the simulation was
-   * secretly running on its own. Gating movement/spawning on this instead
-   * of just "is reactionFlux present" keeps particles frozen in place
-   * until playback is actually happening.
-   */
-  running: boolean;
-  /** The 1x-32x playback multiplier from SimulationPanel — scales both glide speed and spawn density so the speed buttons visibly speed up the particle animation too, not just the underlying concentration math. */
-  speedMultiplier: number;
 }) {
   const [particles, setParticles] = useState<FluxParticle[]>([]);
   const particlesRef = useRef<FluxParticle[]>([]);
-  /** Seconds elapsed since each edge+stream's last spawn — a timer, not a fractional debt, so a long/lagged frame can't burst-spawn several overlapping particles at once (see MIN_PARTICLE_GAP_PX below). */
-  const timeSinceSpawnRef = useRef<Record<string, number>>({});
+  const spawnDebtRef = useRef<Record<string, number>>({});
   const fluxRef = useRef(reactionFlux);
   fluxRef.current = reactionFlux;
   const reversibleRef = useRef(reversibleReactions);
   reversibleRef.current = reversibleReactions;
-  const runningRef = useRef(running);
-  runningRef.current = running;
-  const speedMultiplierRef = useRef(speedMultiplier);
-  speedMultiplierRef.current = speedMultiplier;
   const lastTsRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -286,18 +248,9 @@ function FluxParticles({
       const dt = Math.min(0.25, (ts - lastTsRef.current) / 1000);
       lastTsRef.current = ts;
 
-      // Frozen while paused: no advancing, no new spawns. Still schedules
-      // the next frame so playback picks back up immediately once
-      // `running` flips true, without a stale `lastTsRef` causing a jump.
-      if (!runningRef.current) {
-        frameId = requestAnimationFrame(tick);
-        return;
-      }
-
       const flux = fluxRef.current;
       const reversible = reversibleRef.current;
-      const sinceSpawn = timeSinceSpawnRef.current;
-      const speedMultiplier = speedMultiplierRef.current;
+      const debt = spawnDebtRef.current;
       let live = particlesRef.current;
 
       // Advance existing particles, dropping any that finished their arc.
@@ -305,71 +258,48 @@ function FluxParticles({
         .map((p) => ({ ...p, t: p.t + p.progressPerSecond * dt }))
         .filter((p) => p.t < 1);
 
-      // Same normalization the edge-coloring legend uses: relative to the
-      // current max |flux| across all reactions, not an absolute constant.
-      const maxAbsFlux = Math.max(FLUX_EPSILON, ...Object.values(flux).map((v) => Math.abs(v)));
-
-      const spawned: FluxParticle[] = [];
-
+      // Spawn new particles per edge, density/speed driven by current flux.
       for (const edge of EDGE_GEOMETRY) {
         const flowVelocity = flux[edge.reactionId] ?? 0;
         const absFlux = Math.abs(flowVelocity);
         if (absFlux < FLUX_EPSILON) continue;
-        if (live.length + spawned.length >= MAX_ACTIVE_PARTICLES) break;
-
-        const relativeFlux = Math.min(1, absFlux / maxAbsFlux);
-        const speed = speedFromFlux(relativeFlux) * speedMultiplier;
-        const rate = densityFromFlux(relativeFlux) * speedMultiplier;
+        if (live.length >= MAX_ACTIVE_PARTICLES) break;
 
         const primaryStream: Stream = flowVelocity >= 0 ? "fwd" : "rev";
         const secondaryStream: Stream = primaryStream === "fwd" ? "rev" : "fwd";
         const isReversible = reversible.has(edge.reactionId);
 
-        const streams: Stream[] = isReversible ? [primaryStream, secondaryStream] : [primaryStream];
+        const streams: Array<{ stream: Stream; rate: number }> = [
+          { stream: primaryStream, rate: densityFromFlux(absFlux) },
+        ];
+        if (isReversible) {
+          streams.push({
+            stream: secondaryStream,
+            rate: densityFromFlux(absFlux) * SECONDARY_STREAM_RATIO,
+          });
+        }
 
-        for (const stream of streams) {
+        for (const { stream, rate } of streams) {
           const key = `${edge.reactionId}-${edge.edgeIndex}-${stream}`;
-          const streamRate = stream === primaryStream ? rate : rate * SECONDARY_STREAM_RATIO;
-          // Forward particles carry the shape of what they're becoming
-          // (the "to" pool); reverse particles carry the shape of what
-          // they're reverting to (the "from" pool). This also makes
-          // branch points like aldolase (f16bp -> dhap, f16bp -> g3p) come
-          // out right: each edge's forward stream shows its own 3-carbon
-          // product, not the 6-carbon substrate shared by both edges.
-          const model = (stream === "fwd" ? edge.toModel : edge.fromModel) ?? {
-            carbons: 3,
-            phosphates: 0,
-          };
-
-          // Required gap is whichever is larger: the spacing implied by
-          // the target density, or the minimum spacing needed so this
-          // particle's footprint clears the last one before the next
-          // spawns (scaled by how fast particles are actually moving —
-          // faster particles can be spawned closer together in time
-          // without visually overlapping).
-          const desiredGapSeconds = 1 / streamRate;
-          const footprintPx = particleFootprintPx(model.carbons) + MIN_PARTICLE_GAP_PX;
-          const antiOverlapGapSeconds = footprintPx / (edge.length * speed);
-          const requiredGap = Math.max(desiredGapSeconds, antiOverlapGapSeconds);
-
-          const elapsed = (sinceSpawn[key] ?? requiredGap) + dt;
-          if (elapsed >= requiredGap && live.length + spawned.length < MAX_ACTIVE_PARTICLES) {
+          const nextDebt = (debt[key] ?? 0) + rate * dt;
+          let spent = nextDebt;
+          const spawned: FluxParticle[] = [];
+          while (spent >= 1 && live.length + spawned.length < MAX_ACTIVE_PARTICLES) {
             spawned.push({
               id: ++particleIdCounter,
               reactionId: edge.reactionId,
               edgeIndex: edge.edgeIndex,
               stream,
               t: 0,
-              progressPerSecond: speed,
+              progressPerSecond: speedFromFlux(absFlux),
             });
-            sinceSpawn[key] = 0;
-          } else {
-            sinceSpawn[key] = elapsed;
+            spent -= 1;
           }
+          debt[key] = spent;
+          if (spawned.length) live = live.concat(spawned);
         }
       }
 
-      if (spawned.length) live = live.concat(spawned);
       particlesRef.current = live;
       setParticles(live);
       frameId = requestAnimationFrame(tick);
@@ -395,15 +325,15 @@ function FluxParticles({
         const pos = quadraticBezierPoint(p0, control, p1, p.t);
         const tangent = quadraticBezierTangent(p0, control, p1, p.t);
         const angle = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-        // Same forward=toModel / reverse=fromModel convention as the spawn
-        // logic above — see the comment there for why (aldolase's branch).
-        const model = (p.stream === "fwd" ? edge.toModel : edge.fromModel) ?? {
+        // Forward particles carry the substrate's shape (what's leaving the
+        // "from" pool); reverse particles carry the product's shape (what's
+        // flowing back out of the "to" pool) — an approximation, since we
+        // don't model the intermediate transition state visually.
+        const model = (p.stream === "fwd" ? edge.fromModel : edge.toModel) ?? {
           carbons: 3,
           phosphates: 0,
         };
-        // 2x the original scale (spacing/radii/offset all doubled together)
-        // — the initial size read as too small/hard to see against the map.
-        const spacing = CARBON_SPACING_PX;
+        const spacing = 4.5;
         const span = (model.carbons - 1) * spacing;
 
         return (
@@ -413,15 +343,15 @@ function FluxParticles({
                 key={`c-${i}`}
                 cx={-span / 2 + i * spacing}
                 cy={0}
-                r={CARBON_RADIUS_PX}
+                r={1.6}
                 fill={p.stream === "fwd" ? "#3b82f6" : "#94a3b8"}
               />
             ))}
             {model.phosphates >= 1 && (
-              <circle cx={-span / 2} cy={-6.8} r={3.8} fill="#f59e0b" />
+              <circle cx={-span / 2} cy={-3.4} r={1.9} fill="#f59e0b" />
             )}
             {model.phosphates >= 2 && (
-              <circle cx={span / 2} cy={-6.8} r={3.8} fill="#f59e0b" />
+              <circle cx={span / 2} cy={-3.4} r={1.9} fill="#f59e0b" />
             )}
           </g>
         );
@@ -455,15 +385,6 @@ export interface PathwayMapProps {
    * render exactly as they did before concentration existed.
    */
   concentrations?: Record<string, number>;
-  /**
-   * Whether the simulation is actually playing right now (not just whether
-   * `reactionFlux` happens to be nonzero). Flux particles freeze when this
-   * is false or absent, even if a nonzero flux was left over from before
-   * pausing/adding glucose — see `FluxParticles`'s `running` prop.
-   */
-  isSimulationRunning?: boolean;
-  /** The 1x-32x playback multiplier from `SimulationPanel`; defaults to 1 if absent. Scales flux-particle glide speed and spawn density to match. */
-  simSpeed?: number;
 }
 
 const FLUX_IDLE_COLOR = "#94a3b8"; // matches the original unhighlighted edge color
@@ -513,8 +434,6 @@ export default function PathwayMap({
   onMetaboliteClick,
   reactionFlux,
   concentrations,
-  isSimulationRunning,
-  simSpeed,
 }: PathwayMapProps) {
   // Reversible steps (e.g. aldolase, with its tiny keq) can legitimately run
   // net-backward — computeRate returns a negative velocity in that case.
@@ -667,12 +586,7 @@ export default function PathwayMap({
           their labels. Purely additive: only mounted while a live
           `reactionFlux` is being fed in from the simulation. */}
       {reactionFlux && (
-        <FluxParticles
-          reactionFlux={reactionFlux}
-          reversibleReactions={reversibleReactions}
-          running={isSimulationRunning ?? false}
-          speedMultiplier={simSpeed ?? 1}
-        />
+        <FluxParticles reactionFlux={reactionFlux} reversibleReactions={reversibleReactions} />
       )}
 
       {/* Enzyme nodes (one per reaction step, clickable independent of edges) */}

@@ -34,6 +34,8 @@ export default function App() {
   const [selectedMetaboliteId, setSelectedMetaboliteId] = useState<string | null>(null);
   const [reactionFlux, setReactionFlux] = useState<Record<string, number>>({});
   const [concentrations, setConcentrations] = useState<Record<string, number>>({});
+  const [isSimulationRunning, setIsSimulationRunning] = useState(false);
+  const [simSpeed, setSimSpeed] = useState(1);
 
   // Recomputed only when tissue changes, not every simulation frame.
   const simulationSteps = useMemo(() => resolveSteps(dataset, tissue), [tissue]);
@@ -81,6 +83,8 @@ export default function App() {
           selectedMetaboliteId={selectedMetaboliteId}
           reactionFlux={reactionFlux}
           concentrations={concentrations}
+          isSimulationRunning={isSimulationRunning}
+          simSpeed={simSpeed}
           onEnzymeClick={(slotId) => {
             setSelectedEnzymeSlot(slotId);
             setSelectedReactionId(null);
@@ -144,7 +148,13 @@ export default function App() {
         )}
       </div>
 
-      <SimulationPanel steps={simulationSteps} onFlux={setReactionFlux} onConcentrations={setConcentrations} />
+      <SimulationPanel
+        steps={simulationSteps}
+        onFlux={setReactionFlux}
+        onConcentrations={setConcentrations}
+        onPlayingChange={setIsSimulationRunning}
+        onSpeedChange={setSimSpeed}
+      />
 
       <h2>Loaded data counts</h2>
       <ul>

@@ -1,0 +1,192 @@
+--- a/src/components/PathwayMap.tsx	2026-07-23 08:37:34.634747000 +0000
++++ b/src/components/PathwayMap.tsx	2026-07-23 08:45:46.089547825 +0000
+@@ -189,22 +189,23 @@
+  * noise near zero.
+  */
+ const FLUX_EPSILON = 1e-3;
+-/** mM/s of flux that saturates spawn rate / speed scaling, past which more flux just means denser/faster, not unboundedly so. */
+-const FLUX_SATURATION = 1.2;
+-const MIN_SPAWN_PER_SEC = 0.4;
+-const MAX_SPAWN_PER_SEC = 9;
++const MIN_SPAWN_PER_SEC = 0.3;
++const MAX_SPAWN_PER_SEC = 6;
+ /**
+- * Speed is linear in |flux| (progressPerSecond = absFlux * SPEED_PER_FLUX),
+- * not an affine min+saturation blend — a reaction running at half the
+- * flux of another should visibly move at half the speed, not land in a
+- * narrow band close to every other reaction's speed. `MIN_PROGRESS_PER_SEC`
+- * is only a floor so a barely-nonzero flux still crawls forward instead of
+- * stalling forever; `MAX_PROGRESS_PER_SEC` caps it once |flux| reaches
+- * `FLUX_SATURATION` so a very fast step doesn't blur past unreadably.
++ * Speed and density are both scaled by |flux| relative to the current
++ * *maximum* |flux| across all reactions this frame (same normalization the
++ * edge-coloring legend already uses — see `maxFlux` in the main component),
++ * not against a hardcoded mM/s constant. A fixed constant was the bug in
++ * the previous pass: this dataset's isoforms span vMax 1-10 mM/s (TPI vs.
++ * HK, see enzymes.json), so a guessed saturation point like 1.2 mM/s meant
++ * most active reactions immediately pinned to the same max speed —
++ * "rates not applying" and "all the same speed" were the same root cause.
++ * Normalizing by the live max keeps relative speed differences visible
++ * regardless of the absolute vMax scale, and keeps working if those
++ * illustrative parameters are ever retuned.
+  */
+-const MIN_PROGRESS_PER_SEC = 0.12; // full edge crossing in ~8.3s for a barely-moving reaction
+-const MAX_PROGRESS_PER_SEC = 1.6; // full edge crossing in ~0.6s once flux saturates
+-const SPEED_PER_FLUX = MAX_PROGRESS_PER_SEC / FLUX_SATURATION;
++const MIN_PROGRESS_PER_SEC = 0.12; // full edge crossing in ~8.3s for the slowest active reaction
++const MAX_PROGRESS_PER_SEC = 1.6; // full edge crossing in ~0.6s for the fastest active reaction
+ /**
+  * Reversible (near-equilibrium) steps run substantial flux in both
+  * directions even when net flux is small — that's the physical meaning of
+@@ -215,14 +216,23 @@
+  */
+ const SECONDARY_STREAM_RATIO = 0.45;
+ const MAX_ACTIVE_PARTICLES = 240;
++/** Carbon-dot spacing/radius and phosphate radius, shared with the render below — used here to size the anti-overlap gap. */
++const CARBON_SPACING_PX = 9;
++const CARBON_RADIUS_PX = 3.2;
++/** Minimum visual breathing room enforced between two consecutive particles spawned on the same edge+stream, on top of each particle's own footprint. */
++const MIN_PARTICLE_GAP_PX = 16;
+ 
+-function densityFromFlux(absFlux: number): number {
+-  const saturation = Math.min(1, absFlux / FLUX_SATURATION);
+-  return MIN_SPAWN_PER_SEC + saturation * (MAX_SPAWN_PER_SEC - MIN_SPAWN_PER_SEC);
++function densityFromFlux(relativeFlux: number): number {
++  return MIN_SPAWN_PER_SEC + relativeFlux * (MAX_SPAWN_PER_SEC - MIN_SPAWN_PER_SEC);
+ }
+ 
+-function speedFromFlux(absFlux: number): number {
+-  return Math.min(MAX_PROGRESS_PER_SEC, Math.max(MIN_PROGRESS_PER_SEC, absFlux * SPEED_PER_FLUX));
++function speedFromFlux(relativeFlux: number): number {
++  return MIN_PROGRESS_PER_SEC + relativeFlux * (MAX_PROGRESS_PER_SEC - MIN_PROGRESS_PER_SEC);
++}
++
++/** Visual length (px) of a particle's carbon backbone, used only to keep consecutive spawns from overlapping. */
++function particleFootprintPx(carbons: number): number {
++  return (carbons - 1) * CARBON_SPACING_PX + 2 * CARBON_RADIUS_PX;
+ }
+ 
+ let particleIdCounter = 0;
+@@ -243,7 +253,8 @@
+ }) {
+   const [particles, setParticles] = useState<FluxParticle[]>([]);
+   const particlesRef = useRef<FluxParticle[]>([]);
+-  const spawnDebtRef = useRef<Record<string, number>>({});
++  /** Seconds elapsed since each edge+stream's last spawn — a timer, not a fractional debt, so a long/lagged frame can't burst-spawn several overlapping particles at once (see MIN_PARTICLE_GAP_PX below). */
++  const timeSinceSpawnRef = useRef<Record<string, number>>({});
+   const fluxRef = useRef(reactionFlux);
+   fluxRef.current = reactionFlux;
+   const reversibleRef = useRef(reversibleReactions);
+@@ -259,7 +270,7 @@
+ 
+       const flux = fluxRef.current;
+       const reversible = reversibleRef.current;
+-      const debt = spawnDebtRef.current;
++      const sinceSpawn = timeSinceSpawnRef.current;
+       let live = particlesRef.current;
+ 
+       // Advance existing particles, dropping any that finished their arc.
+@@ -267,48 +278,65 @@
+         .map((p) => ({ ...p, t: p.t + p.progressPerSecond * dt }))
+         .filter((p) => p.t < 1);
+ 
+-      // Spawn new particles per edge, density/speed driven by current flux.
++      // Same normalization the edge-coloring legend uses: relative to the
++      // current max |flux| across all reactions, not an absolute constant.
++      const maxAbsFlux = Math.max(FLUX_EPSILON, ...Object.values(flux).map((v) => Math.abs(v)));
++
++      const spawned: FluxParticle[] = [];
++
+       for (const edge of EDGE_GEOMETRY) {
+         const flowVelocity = flux[edge.reactionId] ?? 0;
+         const absFlux = Math.abs(flowVelocity);
+         if (absFlux < FLUX_EPSILON) continue;
+-        if (live.length >= MAX_ACTIVE_PARTICLES) break;
++        if (live.length + spawned.length >= MAX_ACTIVE_PARTICLES) break;
++
++        const relativeFlux = Math.min(1, absFlux / maxAbsFlux);
++        const speed = speedFromFlux(relativeFlux);
++        const rate = densityFromFlux(relativeFlux);
+ 
+         const primaryStream: Stream = flowVelocity >= 0 ? "fwd" : "rev";
+         const secondaryStream: Stream = primaryStream === "fwd" ? "rev" : "fwd";
+         const isReversible = reversible.has(edge.reactionId);
+ 
+-        const streams: Array<{ stream: Stream; rate: number }> = [
+-          { stream: primaryStream, rate: densityFromFlux(absFlux) },
+-        ];
+-        if (isReversible) {
+-          streams.push({
+-            stream: secondaryStream,
+-            rate: densityFromFlux(absFlux) * SECONDARY_STREAM_RATIO,
+-          });
+-        }
++        const streams: Stream[] = isReversible ? [primaryStream, secondaryStream] : [primaryStream];
+ 
+-        for (const { stream, rate } of streams) {
++        for (const stream of streams) {
+           const key = `${edge.reactionId}-${edge.edgeIndex}-${stream}`;
+-          const nextDebt = (debt[key] ?? 0) + rate * dt;
+-          let spent = nextDebt;
+-          const spawned: FluxParticle[] = [];
+-          while (spent >= 1 && live.length + spawned.length < MAX_ACTIVE_PARTICLES) {
++          const streamRate = stream === primaryStream ? rate : rate * SECONDARY_STREAM_RATIO;
++          const model = (stream === "fwd" ? edge.fromModel : edge.toModel) ?? {
++            carbons: 3,
++            phosphates: 0,
++          };
++
++          // Required gap is whichever is larger: the spacing implied by
++          // the target density, or the minimum spacing needed so this
++          // particle's footprint clears the last one before the next
++          // spawns (scaled by how fast particles are actually moving —
++          // faster particles can be spawned closer together in time
++          // without visually overlapping).
++          const desiredGapSeconds = 1 / streamRate;
++          const footprintPx = particleFootprintPx(model.carbons) + MIN_PARTICLE_GAP_PX;
++          const antiOverlapGapSeconds = footprintPx / (edge.length * speed);
++          const requiredGap = Math.max(desiredGapSeconds, antiOverlapGapSeconds);
++
++          const elapsed = (sinceSpawn[key] ?? requiredGap) + dt;
++          if (elapsed >= requiredGap && live.length + spawned.length < MAX_ACTIVE_PARTICLES) {
+             spawned.push({
+               id: ++particleIdCounter,
+               reactionId: edge.reactionId,
+               edgeIndex: edge.edgeIndex,
+               stream,
+               t: 0,
+-              progressPerSecond: speedFromFlux(absFlux),
++              progressPerSecond: speed,
+             });
+-            spent -= 1;
++            sinceSpawn[key] = 0;
++          } else {
++            sinceSpawn[key] = elapsed;
+           }
+-          debt[key] = spent;
+-          if (spawned.length) live = live.concat(spawned);
+         }
+       }
+ 
++      if (spawned.length) live = live.concat(spawned);
+       particlesRef.current = live;
+       setParticles(live);
+       frameId = requestAnimationFrame(tick);
+@@ -344,7 +372,7 @@
+         };
+         // 2x the original scale (spacing/radii/offset all doubled together)
+         // — the initial size read as too small/hard to see against the map.
+-        const spacing = 9;
++        const spacing = CARBON_SPACING_PX;
+         const span = (model.carbons - 1) * spacing;
+ 
+         return (
+@@ -354,7 +382,7 @@
+                 key={`c-${i}`}
+                 cx={-span / 2 + i * spacing}
+                 cy={0}
+-                r={3.2}
++                r={CARBON_RADIUS_PX}
+                 fill={p.stream === "fwd" ? "#3b82f6" : "#94a3b8"}
+               />
+             ))}
